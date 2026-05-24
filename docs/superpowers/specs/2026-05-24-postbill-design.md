@@ -223,31 +223,87 @@ regex = "1"
 
 ### 6.1 技术细节
 
-- **框架**: Svelte 5 + TypeScript
-- **样式**: Tailwind CSS v4（`@import "tailwindcss"`）
+- **框架**: Svelte 5 + TypeScript（生产）；原型使用单文件 HTML + Tailwind CDN
+- **样式**: Tailwind CSS v4（`@import "tailwindcss"`）；原型使用 `unpkg CDN` + 自定义 CSS 变量
+- **暗黑模式**: CSS 自定义属性（`--bg`、`--surface`、`--text` 等）+ `class="dark"` 切换 + `localStorage` 持久化
+- **响应式**: 移动端优先，断点 `md:` (768px)。移动端底部 Tab 栏 + PC 端左侧图标侧边栏
+- **触控目标**: ≥44x44px，底部 Tab 栏适配 `safe-area-inset-bottom`
 - **IPC**: `@tauri-apps/api` 的 `invoke()` 调用 Rust commands
 - **状态**: Svelte 5 runes（`$state`, `$derived`, `$effect`）
-- **图表**: 不引入（MVP 只做表格）
+- **图表**: MVP 阶段使用纯 CSS 柱状图占位，为后续 Chart.js 接入预留接口
 
-### 6.2 页面结构
+### 6.2 导航结构
+
+**跨平台导航方案：移动端底部 Tab + PC 端左侧图标栏。**
+
+| 平台 | 导航模式 | 位置 | 宽度/高度 |
+|------|---------|------|-----------|
+| PC (≥768px) | 左侧图标侧边栏 | `fixed left-0 top-0 bottom-0` | 64px |
+| 移动 (<768px) | 底部 Tab 栏 | `fixed bottom-0 left-0 right-0` | 60px + safe-area |
+
+4 个导航项：概览 / 账单 / 邮箱 / 设置。
+
+默认首页为「概览」。
+
+### 6.3 页面 1：概览（Dashboard）
+
+首页以总览数据为主，帮助用户快速了解当月消费全局。
+
+#### 组件树
 
 ```
-┌ Sidebar ──────────────────────────────────────┐
-│  Billo                                      │
-│  ─────────────────────────────                 │
-│  [账单浏览器]     ← 默认首页                    │
-│  [邮箱管理]                                     │
-│  ─────────────────────────────                 │
-│  [设置]                                        │
-│                                                │
-│  ─────────────────────────────                 │
-│  ● 招商银行 · 已同步                            │
-│  5月真实花销 ¥14,397.65                          │
-│  数据完全存储于本地                               │
-└────────────────────────────────────────────────┘
+OverviewPage
+├── PageHero              ← 标题 "5月消费概览" + 副标题（银行/卡号/日期范围）
+├── SummaryCards          ← 3 卡 Grid：本月花销（大数字）/ 最近一笔 / 同步状态
+├── CategoryGrid          ← 2×2 或 2×N 网格：emoji + 分类名 + 金额 + 百分比
+│   └── 分类项：餐饮 / 购物 / 交通 / 娱乐 / 其他
+├── TrendChart            ← 纯 CSS 柱状图占位（近 7 天消费趋势）
+└── RecentTransactions    ← 最近 5 笔交易行，点击「查看全部」跳转账单页
 ```
 
-### 6.3 页面 1：账单浏览器
+**SummaryCards 数据来源：**
+
+```
+invoke("get_summary", { year_month })
+  → { total: 14397.65, count: 85, dailyAvg: 576, refundCount: 5 }
+
+invoke("get_recent")
+  → { date, time, merchant, amount, card_last4 } | null
+
+invoke("get_sync_status")
+  → { lastFetch, totalEmails: 30, totalTxns: 85 }
+```
+
+**CategoryGrid** 使用纯 CSS 彩色卡片，分类颜色方案：
+- 餐饮 → `#f0f2ff` 底 + `#5b6cf0` 字
+- 购物 → `#eef9f3` 底 + `#26a869` 字
+- 交通 → `#fef8f2` 底 + `#e8913a` 字
+- 娱乐 → `#fef4f4` 底 + `#e05050` 字
+
+### 6.4 页面 2：账单明细
+
+消费列表，支持 PC 端表格 + 移动端按日期分组卡片两种展示模式。
+
+#### 组件树
+
+```
+BillsPage
+├── FilterBar            ← 月份下拉 + 类型下拉 + 搜索框 + 导出 CSV + 立即同步
+├── PC: TransactionTable ← 表格（≥768px 显示）
+│   └── 列：日期 / 时间 / 商户(含 emoji 图标) / 金额 / 分类标签 / 卡号 / 来源邮件
+├── Mobile: DateGroupedList ← 按日期分组卡片（<768px 显示）
+│   ├── DateHeader       ← "📅 05/24 · 2笔"
+│   └── TransactionCard  ← emoji + 商户 + 金额 + 时间/卡号/分类标签
+└── Pagination           ← 分页条
+```
+
+#### 移动端卡片 vs PC 端表格切换
+
+同一份数据，两个 DOM 容器，通过 CSS 类控制显隐：
+- `class="hidden md:table"` — PC 表格
+- `class="md:hidden"` — 移动端日期分组卡片
+
+### 6.5 页面 3：邮箱管理
 
 #### 组件树
 
@@ -284,7 +340,7 @@ invoke("get_sync_status")
   → { last_fetch: timestamp, total_emails: 30, total_txns: 85, accounts_ok: 1, accounts_total: 1 }
 ```
 
-### 6.4 页面 2：邮箱管理
+### 6.5 页面 3：邮箱管理
 
 #### 组件树
 
@@ -322,12 +378,14 @@ invoke("get_accounts")
        match_rate, status }]
 ```
 
-### 6.5 页面 3：设置
+### 6.6 页面 4：设置
 
 #### 组件树
 
 ```
 SettingsPage
+├── AppearanceSection
+│   └── 深色模式 toggle → CSS 变量切换 + localStorage 持久化
 ├── DataSection
 │   ├── 数据库路径 + 大小（静态）
 │   ├── [备份] → invoke("backup_db") → 文件保存对话框
@@ -336,10 +394,23 @@ SettingsPage
 │   ├── 模板 chips 列表（当前仅有 `cmb_daily`）
 │   └── [重新解析] → invoke("reparse_all") → 确认弹窗 → 进度 → 刷新数据
 ├── FetchSection
-│   └── 启动时自动抓取 toggle → 写入本地配置
+│   └── 启动时自动同步 toggle → 写入本地配置
 └── AboutSection
     └── 版本号 + 技术栈简述
 ```
+
+#### 深色模式实现
+
+CSS 自定义属性（`:root` / `.dark`）控制主题色，`document.documentElement.classList.toggle('dark')` 切换，偏好存入 `localStorage('billo-theme')`。初始化时读取存储值，无存储值时跟随系统 `prefers-color-scheme`。深色模式下的色值映射：
+
+| 元素 | 浅色 | 深色 |
+|------|------|------|
+| 背景 | `#f7f8fb` | `#0c0c17` |
+| 卡片 | `#ffffff` | `#161625` |
+| 主文字 | `#1a1c2e` | `#e4e4ee` |
+| 次文字 | `#5c6078` | `#9898b0` |
+| 边框 | `#e8eaf0` | `#252540` |
+| 强调色 | `#5b6cf0` | `#7b8aff` |
 
 #### 按钮与交互
 
@@ -425,4 +496,18 @@ invoke("fetch_new_mails")
 
 ## 10. 原型文件
 
-可交互 HTML 原型位于 `prototype/index.html`，浏览器直接打开可预览三个页面的布局和交互节奏。
+可交互 HTML 原型位于 `prototype/index.html`，单文件结构（HTML + CSS + JS），可直接在浏览器中打开预览。
+
+### 原型技术栈
+- Tailwind CSS CDN（`unpkg.com/@tailwindcss/browser`）
+- 自定义 CSS 变量（`--bg`、`--surface`、`--text` 等，light/dark 双主题）
+- 原生 JS（无框架依赖）
+
+### 原型覆盖
+- **4 个页面**：概览 / 账单明细 / 邮箱管理 / 设置
+- **PC 端**：固定左侧 64px 图标导航栏 + 内容区最大宽度 960px 居中
+- **移动端**：底部 60px Tab 栏 + 安全区适配
+- **暗黑模式**：设置页 Toggle 切换 + localStorage 持久化
+- **账单列表**：PC 表格 + 移动端按日期分组卡片（同一数据，CSS 显隐控制）
+- **假数据**：12 条模拟交易（招商银行 ··3740）
+- **Tauri API 预留**：JS 中以注释形式标注 `fetchTransactions` / `syncEmails` / `parseEmailContent` / `getSummary` 接口
