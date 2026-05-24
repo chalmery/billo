@@ -1,0 +1,46 @@
+# Rust / Tauri
+src-tauri/target/
+target/
+
+# Node / Svelte
+node_modules/
+.svelte-kit/
+dist/
+build/
+.vite/
+
+# Tauri
+src-tauri/icons/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# 邮件格式参考（含隐私数据）
+招商银行邮件格式/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Build artifacts
+*.dmg
+*.deb
+*.AppImage
+*.snap
