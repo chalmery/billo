@@ -166,3 +166,124 @@ export async function getAllDailySummaries(limit?: number, offset?: number): Pro
 export async function getRawEmail(summaryId: number): Promise<string | null> {
   return invoke("get_raw_email", { summaryId });
 }
+
+// ===== Statistics Charts =====
+
+export interface YearlyTotal {
+  year: number;
+  total: number;
+  count: number;
+}
+
+export interface PaymentMethodBreakdown {
+  method: string;
+  total: number;
+  count: number;
+}
+
+export async function getYearlyTotals(cardId: number | null): Promise<YearlyTotal[]> {
+  return invoke("get_yearly_totals", { cardId });
+}
+
+export async function getPaymentMethodBreakdown(
+  cardId: number | null,
+  dateFrom: string,
+  dateTo: string
+): Promise<PaymentMethodBreakdown[]> {
+  return invoke("get_payment_method_breakdown", { cardId, dateFrom, dateTo });
+}
+
+// ===== Card Detail =====
+
+export interface CardDetail {
+  card: Card;
+  email_count: number;
+  transaction_count: number;
+  sync_logs: SyncLogEntry[];
+}
+
+export interface SyncLogEntry {
+  id: number;
+  card_id: number;
+  status: string;
+  new_emails: number;
+  new_transactions: number;
+  message: string | null;
+  created_at: string;
+}
+
+export async function getCardDetail(cardId: number): Promise<CardDetail | null> {
+  return invoke("get_card_detail", { cardId });
+}
+
+export async function updateCard(params: {
+  id: number;
+  name: string;
+  last_four: string;
+  bank: string;
+  parser_profile: string;
+  color: string;
+  sync_method?: string;
+  sync_config?: string;
+}): Promise<void> {
+  return invoke("update_card", {
+    id: params.id,
+    name: params.name,
+    lastFour: params.last_four,
+    bank: params.bank,
+    parserProfile: params.parser_profile,
+    color: params.color,
+    syncMethod: params.sync_method ?? null,
+    syncConfig: params.sync_config ?? null,
+  });
+}
+
+// ===== Enriched Daily Summaries =====
+
+export interface EnrichedDailySummary {
+  id: number;
+  card_id: number;
+  card_name: string;
+  card_last_four: string;
+  email_date: string;
+  transaction_count: number;
+  total_amount: number;
+  fetched_at: string;
+}
+
+export async function getEnrichedDailySummaries(
+  cardId: number | null,
+  page?: number,
+  pageSize?: number
+): Promise<PaginatedResult<EnrichedDailySummary>> {
+  return invoke("get_enriched_daily_summaries", {
+    cardId,
+    page: page ?? 1,
+    pageSize: pageSize ?? 20,
+  });
+}
+
+// ===== Category Rules =====
+
+export interface CategoryRule {
+  id: number;
+  pattern: string;
+  category: string;
+  created_at: string;
+}
+
+export async function getCategoryRules(): Promise<CategoryRule[]> {
+  return invoke("get_category_rules");
+}
+
+export async function addCategoryRule(pattern: string, category: string): Promise<CategoryRule> {
+  return invoke("add_category_rule", { pattern, category });
+}
+
+export async function updateCategoryRule(id: number, pattern: string, category: string): Promise<void> {
+  return invoke("update_category_rule", { id, pattern, category });
+}
+
+export async function deleteCategoryRule(id: number): Promise<void> {
+  return invoke("delete_category_rule", { id });
+}

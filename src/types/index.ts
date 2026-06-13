@@ -9,6 +9,10 @@ export interface Card {
   last_four: string
   bank: string
   created_at: string
+  parser_profile: string
+  color: string
+  sync_method: string | null
+  sync_config: string | null
 }
 
 export interface CreateCardInput {
