@@ -1143,9 +1143,28 @@ impl Database {
 
     pub fn get_card_detail(&self, card_id: i64) -> SqliteResult<Option<CardDetail>> {
         let conn = self.conn.lock().unwrap();
-        let card = match self.get_card(card_id)? {
-            Some(c) => c,
-            None => return Ok(None),
+        // Inline card fetch to avoid deadlock (conn is already locked, can't call self.get_card)
+        let card = conn.query_row(
+            "SELECT id, name, last_four, bank, parser_profile, color, sync_method, sync_config, created_at FROM cards WHERE id = ?1",
+            params![card_id],
+            |row| {
+                Ok(Card {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    last_four: row.get(2)?,
+                    bank: row.get(3)?,
+                    parser_profile: row.get(4)?,
+                    color: row.get(5)?,
+                    sync_method: row.get(6)?,
+                    sync_config: row.get(7)?,
+                    created_at: row.get(8)?,
+                })
+            },
+        );
+        let card = match card {
+            Ok(c) => c,
+            Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(None),
+            Err(e) => return Err(e),
         };
 
         let email_count: i64 = conn.query_row(

@@ -26,8 +26,6 @@ function formatDate(d: Date): string {
 }
 
 function generateYearGrid(year: number): (Date | null)[][] {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
   const jan1 = new Date(year, 0, 1);
   const dec31 = new Date(year, 11, 31);
   const jan1Day = jan1.getDay();
@@ -46,7 +44,7 @@ function generateYearGrid(year: number): (Date | null)[][] {
       weeks.push(currentWeek);
       currentWeek = Array(7).fill(null);
     }
-    if (current.getFullYear() === year && current <= today) {
+    if (current.getFullYear() === year) {
       currentWeek[monBased] = new Date(current);
     }
     current.setDate(current.getDate() + 1);
@@ -96,9 +94,11 @@ export function Heatmap({ data, year, availableYears, onYearChange, thresholds, 
                   const dp = date && key ? data[key] : null;
                   const amount = dp ? dp.amount : 0;
                   const bg = date ? getColor(amount, thresholds, colors) : 'transparent';
+                  const isFuture = date && date > new Date();
                   const title = date && dp
                     ? `${key}: ¥${dp.amount.toFixed(2)} (${dp.count}笔)`
-                    : date ? `${key}: 无数据` : '';
+                    : date && !isFuture ? `${key}: 无数据`
+                    : date ? key : '';
                   return (
                     <div key={di} style={{ width: `${cellSize}px`, height: `${cellSize}px`, backgroundColor: bg, borderRadius: '2px' }} title={title} />
                   );

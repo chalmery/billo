@@ -14,7 +14,7 @@ export default function Emails() {
   const [summaries, setSummaries] = useState<EnrichedDailySummary[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [pageSize, setPageSize] = useState(10);
   const [loading, setLoading] = useState(true);
   const [rawHtml, setRawHtml] = useState<string | null>(null);
   const [htmlLoading, setHtmlLoading] = useState(false);
@@ -67,27 +67,27 @@ export default function Emails() {
             <table className="w-full">
               <thead>
                 <tr className="bg-muted border-b">
-                  <th className="text-left px-4 py-3 text-sm font-medium">邮件日期</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium">卡片</th>
-                  <th className="text-right px-4 py-3 text-sm font-medium">交易笔数</th>
-                  <th className="text-right px-4 py-3 text-sm font-medium">消费金额</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium">同步时间</th>
-                  <th className="text-center px-4 py-3 text-sm font-medium w-24">操作</th>
+                  <th className="text-left px-3 py-2 text-sm font-medium">邮件日期</th>
+                  <th className="text-left px-3 py-2 text-sm font-medium">卡片</th>
+                  <th className="text-right px-3 py-2 text-sm font-medium">交易笔数</th>
+                  <th className="text-right px-3 py-2 text-sm font-medium">消费金额</th>
+                  <th className="text-left px-3 py-2 text-sm font-medium">同步时间</th>
+                  <th className="text-center px-3 py-2 text-sm font-medium w-20">操作</th>
                 </tr>
               </thead>
               <tbody>
                 {summaries.map((s) => (
                   <tr key={s.id} className="border-b hover:bg-muted/50 transition-colors">
-                    <td className="px-4 py-3 text-sm font-medium">{s.email_date}</td>
-                    <td className="px-4 py-3 text-sm text-muted-foreground">尾号{s.card_last_four}</td>
-                    <td className="px-4 py-3 text-sm text-right">{s.transaction_count} 笔</td>
-                    <td className="px-4 py-3 text-sm text-right font-medium text-destructive">
+                    <td className="px-3 py-2 text-sm font-medium">{s.email_date}</td>
+                    <td className="px-3 py-2 text-sm text-muted-foreground">尾号{s.card_last_four}</td>
+                    <td className="px-3 py-2 text-sm text-right">{s.transaction_count} 笔</td>
+                    <td className="px-3 py-2 text-sm text-right font-medium text-destructive">
                       -¥{s.total_amount.toFixed(2)}
                     </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">{s.fetched_at}</td>
-                    <td className="px-4 py-3 text-center">
+                    <td className="px-3 py-2 text-xs text-muted-foreground">{s.fetched_at}</td>
+                    <td className="px-3 py-2 text-center">
                       <Button variant="ghost" size="sm" onClick={() => handleViewHtml(s)}>
-                        <Eye className="h-4 w-4 mr-1" />查看原文
+                        <Eye className="h-3.5 w-3.5 mr-1" />查看
                       </Button>
                     </td>
                   </tr>
