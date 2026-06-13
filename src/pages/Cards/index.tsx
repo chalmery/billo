@@ -1,69 +1,50 @@
 import { useEffect, useState } from "react";
-import { Card, CardContent } from "@/components/ui/card";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogClose,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { getCards, createCard, deleteCard } from "@/lib/api";
 import type { Card as CardType } from "@/types";
 import { Plus, Trash2, CreditCard } from "lucide-react";
+
+const CARD_GRADIENTS = [
+  "from-slate-800 to-slate-900",
+  "from-indigo-800 to-indigo-950",
+  "from-emerald-800 to-emerald-950",
+  "from-amber-700 to-amber-900",
+  "from-rose-800 to-rose-950",
+  "from-sky-800 to-sky-950",
+];
+
+const CARD_COLORS = ["slate", "indigo", "emerald", "amber", "rose", "sky"];
 
 export default function Cards() {
   const [cards, setCards] = useState<CardType[]>([]);
   const [showDialog, setShowDialog] = useState(false);
   const [newName, setNewName] = useState("");
   const [newLastFour, setNewLastFour] = useState("");
+  const [newColor, setNewColor] = useState(0);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
 
-  useEffect(() => {
-    loadCards();
-  }, []);
+  useEffect(() => { loadCards(); }, []);
 
   async function loadCards() {
     setLoading(true);
-    try {
-      const result = await getCards();
-      setCards(result);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
+    try { setCards(await getCards()); } catch (e) { console.error(e); } finally { setLoading(false); }
   }
 
   async function handleAdd() {
     if (!newName.trim() || !newLastFour.trim()) return;
     try {
       await createCard(newName.trim(), newLastFour.trim());
-      setNewName("");
-      setNewLastFour("");
-      setShowDialog(false);
+      setNewName(""); setNewLastFour(""); setNewColor(0); setShowDialog(false);
       loadCards();
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) { console.error(e); }
   }
 
   async function handleDelete(id: number) {
     if (!confirm("确定删除此卡片及其所有交易记录？")) return;
-    try {
-      await deleteCard(id);
-      loadCards();
-    } catch (e) {
-      console.error(e);
-    }
+    try { await deleteCard(id); loadCards(); } catch (e) { console.error(e); }
   }
 
   return (
@@ -71,60 +52,57 @@ export default function Cards() {
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold tracking-tight">卡片管理</h2>
         <Button onClick={() => setShowDialog(true)} size="sm">
-          <Plus className="h-4 w-4 mr-1" />
-          添加卡片
+          <Plus className="h-4 w-4 mr-1" />添加卡片
         </Button>
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center h-64 text-muted-foreground">
-          加载中...
-        </div>
+        <div className="flex items-center justify-center h-64 text-muted-foreground">加载中...</div>
       ) : cards.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <CreditCard className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium">还没有卡片</h3>
-            <p className="text-sm text-muted-foreground mt-1">
-              添加你的招商银行信用卡，开始追踪消费。
-            </p>
-          </CardContent>
-        </Card>
+        <div className="bg-card border rounded-xl py-12 text-center">
+          <CreditCard className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+          <h3 className="text-lg font-medium">还没有卡片</h3>
+          <p className="text-sm text-muted-foreground mt-1">添加你的招商银行信用卡，开始追踪消费。</p>
+        </div>
       ) : (
-        <Card>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>卡片名称</TableHead>
-                  <TableHead>卡号尾号</TableHead>
-                  <TableHead>银行</TableHead>
-                  <TableHead>添加时间</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {cards.map((card) => (
-                  <TableRow key={card.id}>
-                    <TableCell className="font-medium">{card.name}</TableCell>
-                    <TableCell>**** {card.last_four}</TableCell>
-                    <TableCell>{card.bank}</TableCell>
-                    <TableCell className="text-muted-foreground">{card.created_at}</TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDelete(card.id)}
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {cards.map((card) => {
+            const gradientIdx = CARD_COLORS.indexOf(card.color ?? "slate");
+            const gradient = CARD_GRADIENTS[gradientIdx >= 0 ? gradientIdx : 0];
+            return (
+              <div
+                key={card.id}
+                onClick={() => navigate(`/cards/${card.id}`)}
+                className={`relative bg-gradient-to-br ${gradient} rounded-2xl p-5 cursor-pointer hover:scale-[1.02] transition-transform shadow-lg min-h-[180px] flex flex-col justify-between group`}
+              >
+                <div className="absolute top-3 right-3 text-white/15 text-4xl font-black select-none">
+                  {card.bank.slice(0, 2)}
+                </div>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleDelete(card.id); }}
+                  className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-lg hover:bg-white/10"
+                >
+                  <Trash2 className="h-4 w-4 text-white/70" />
+                </button>
+                <div className="flex justify-between items-start">
+                  <span className="text-white/70 text-xs font-medium">{card.name}</span>
+                  <span className="text-white/30 text-xs">{card.bank}</span>
+                </div>
+                <div className="mt-4">
+                  <span className="text-white text-3xl font-mono tracking-widest">
+                    **** {card.last_four}
+                  </span>
+                </div>
+                <div className="flex justify-between items-end mt-4">
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/10 text-white/60 text-xs">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-400" />Gmail
+                  </span>
+                  <span className="text-white/30 text-xs">{card.created_at.slice(0, 10)}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
 
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
@@ -135,31 +113,26 @@ export default function Cards() {
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">卡片名称</label>
-              <input
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                placeholder="例如: 招商银行信用卡"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-              />
+              <input className="flex h-10 w-full rounded-md border px-3 py-2 text-sm bg-background" placeholder="例如: 招商银行信用卡" value={newName} onChange={(e) => setNewName(e.target.value)} />
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">卡号后四位</label>
-              <input
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                placeholder="例如: 3740"
-                maxLength={4}
-                value={newLastFour}
-                onChange={(e) => setNewLastFour(e.target.value.replace(/\D/g, ""))}
-              />
+              <input className="flex h-10 w-full rounded-md border px-3 py-2 text-sm bg-background" placeholder="例如: 3740" maxLength={4} value={newLastFour} onChange={(e) => setNewLastFour(e.target.value.replace(/\D/g, ""))} />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">卡片颜色</label>
+              <div className="flex gap-2">
+                {CARD_GRADIENTS.map((g, i) => (
+                  <button key={i} onClick={() => setNewColor(i)}
+                    className={`w-8 h-8 rounded-full bg-gradient-to-br ${g} border-2 ${newColor === i ? "border-primary" : "border-transparent"} transition-all`}
+                  />
+                ))}
+              </div>
             </div>
           </div>
           <div className="flex justify-end gap-2">
-            <DialogClose asChild>
-              <Button variant="outline">取消</Button>
-            </DialogClose>
-            <Button onClick={handleAdd} disabled={!newName.trim() || newLastFour.length !== 4}>
-              添加
-            </Button>
+            <DialogClose asChild><Button variant="outline">取消</Button></DialogClose>
+            <Button onClick={handleAdd} disabled={!newName.trim() || newLastFour.length !== 4}>添加</Button>
           </div>
         </DialogContent>
       </Dialog>
