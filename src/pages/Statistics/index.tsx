@@ -1,4 +1,17 @@
 import { useEffect, useState } from "react";
+import {
+  Box,
+  Card,
+  CardContent,
+  Typography,
+  CircularProgress,
+  Table,
+  TableHead,
+  TableBody,
+  TableRow,
+  TableCell,
+  TableContainer,
+} from "@mui/material";
 import { ChipFilter } from "@/components/shared/ChipFilter";
 import {
   getCards,
@@ -102,182 +115,225 @@ export default function Statistics() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64 text-muted-foreground">加载中...</div>
+      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", height: 256 }}>
+        <CircularProgress />
+      </Box>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold tracking-tight">统计分析</h2>
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
+      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <Typography variant="h5" sx={{ fontWeight: 700 }}>
+          统计分析
+        </Typography>
         <ChipFilter options={chipOptions} selected={selectedCards} onChange={setSelectedCards} />
-      </div>
+      </Box>
 
       {/* 2×2 Chart Grid */}
-      <div className="grid grid-cols-2 gap-4">
+      <Box sx={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 2 }}>
         {/* Monthly Trend AreaChart */}
-        <div className="bg-card border rounded-xl p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-medium">月度消费趋势</h3>
-          </div>
-          <ResponsiveContainer width="100%" height={280}>
-            <AreaChart data={mergedMonthly}>
-              <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-              <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-              <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `¥${v}`} />
-              <Tooltip formatter={(value) => `¥${Number(value).toFixed(2)}`} />
-              <Area type="monotone" dataKey="current" name={`${year}年`} stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.1} strokeWidth={2} />
-              <Area type="monotone" dataKey="previous" name={`${year - 1}年`} stroke="#94a3b8" fill="none" strokeDasharray="5 5" strokeWidth={2} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
+        <Card>
+          <CardContent sx={{ p: 2.5, "&:last-child": { pb: 2.5 } }}>
+            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2 }}>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                月度消费趋势
+              </Typography>
+            </Box>
+            <ResponsiveContainer width="100%" height={280}>
+              <AreaChart data={mergedMonthly}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="month" tick={{ fontSize: 12 }} />
+                <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `¥${v}`} />
+                <Tooltip formatter={(value) => `¥${Number(value).toFixed(2)}`} />
+                <Area type="monotone" dataKey="current" name={`${year}年`} stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.1} strokeWidth={2} />
+                <Area type="monotone" dataKey="previous" name={`${year - 1}年`} stroke="#94a3b8" fill="none" strokeDasharray="5 5" strokeWidth={2} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
 
         {/* Yearly BarChart (horizontal) */}
-        <div className="bg-card border rounded-xl p-5">
-          <h3 className="text-sm font-medium mb-4">年度消费趋势</h3>
-          {yearlyData.length === 0 ? (
-            <div className="text-center py-16 text-muted-foreground text-sm">暂无数据</div>
-          ) : (
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={yearlyData} layout="vertical" margin={{ left: 40, right: 40 }}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-border" horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 12 }} tickFormatter={(v) => `¥${v}`} />
-                <YAxis type="category" dataKey="year" tick={{ fontSize: 12 }} />
-                <Tooltip formatter={(value) => `¥${Number(value).toFixed(2)}`} />
-                <Bar dataKey="total" fill="#3b82f6" radius={[0, 4, 4, 0]}>
-                  {yearlyData.map((_entry, idx) => (
-                    <Cell key={idx} fill={CAT_COLORS[idx % CAT_COLORS.length]} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </div>
+        <Card>
+          <CardContent sx={{ p: 2.5, "&:last-child": { pb: 2.5 } }}>
+            <Typography variant="body2" sx={{ fontWeight: 600, mb: 2 }}>
+              年度消费趋势
+            </Typography>
+            {yearlyData.length === 0 ? (
+              <Box sx={{ textAlign: "center", py: 8 }}>
+                <Typography variant="body2" color="text.secondary">
+                  暂无数据
+                </Typography>
+              </Box>
+            ) : (
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={yearlyData} layout="vertical" margin={{ left: 40, right: 40 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                  <XAxis type="number" tick={{ fontSize: 12 }} tickFormatter={(v) => `¥${v}`} />
+                  <YAxis type="category" dataKey="year" tick={{ fontSize: 12 }} />
+                  <Tooltip formatter={(value) => `¥${Number(value).toFixed(2)}`} />
+                  <Bar dataKey="total" fill="#3b82f6" radius={[0, 4, 4, 0]}>
+                    {yearlyData.map((_entry, idx) => (
+                      <Cell key={idx} fill={CAT_COLORS[idx % CAT_COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Category PieChart */}
-        <div className="bg-card border rounded-xl p-5">
-          <h3 className="text-sm font-medium mb-4">消费分类占比</h3>
-          {categoryPieData.length === 0 ? (
-            <div className="text-center py-16 text-muted-foreground text-sm">暂无数据</div>
-          ) : (
-            <ResponsiveContainer width="100%" height={280}>
-              <PieChart>
-                <Pie
-                  data={categoryPieData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={100}
-                  paddingAngle={2}
-                  dataKey="value"
-                >
-                  {categoryPieData.map((_, idx) => (
-                    <Cell key={idx} fill={CAT_COLORS[idx % CAT_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(value) => `¥${Number(value).toFixed(2)}`} />
-              </PieChart>
-            </ResponsiveContainer>
-          )}
-          <div className="flex flex-wrap gap-3 mt-2 justify-center">
-            {categoryPieData.map((d, idx) => (
-              <div key={d.name} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: CAT_COLORS[idx % CAT_COLORS.length] }} />
-                {d.name}
-              </div>
-            ))}
-          </div>
-        </div>
+        <Card>
+          <CardContent sx={{ p: 2.5, "&:last-child": { pb: 2.5 } }}>
+            <Typography variant="body2" sx={{ fontWeight: 600, mb: 2 }}>
+              消费分类占比
+            </Typography>
+            {categoryPieData.length === 0 ? (
+              <Box sx={{ textAlign: "center", py: 8 }}>
+                <Typography variant="body2" color="text.secondary">
+                  暂无数据
+                </Typography>
+              </Box>
+            ) : (
+              <ResponsiveContainer width="100%" height={280}>
+                <PieChart>
+                  <Pie
+                    data={categoryPieData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={100}
+                    paddingAngle={2}
+                    dataKey="value"
+                  >
+                    {categoryPieData.map((_, idx) => (
+                      <Cell key={idx} fill={CAT_COLORS[idx % CAT_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value) => `¥${Number(value).toFixed(2)}`} />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1.5, mt: 1, justifyContent: "center" }}>
+              {categoryPieData.map((d, idx) => (
+                <Box key={d.name} sx={{ display: "flex", alignItems: "center", gap: 0.75, fontSize: "0.75rem", color: "text.secondary" }}>
+                  <Box sx={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: CAT_COLORS[idx % CAT_COLORS.length] }} />
+                  {d.name}
+                </Box>
+              ))}
+            </Box>
+          </CardContent>
+        </Card>
 
         {/* Payment Method PieChart */}
-        <div className="bg-card border rounded-xl p-5">
-          <h3 className="text-sm font-medium mb-4">支付方式占比</h3>
-          {paymentPieData.length === 0 ? (
-            <div className="text-center py-16 text-muted-foreground text-sm">暂无数据</div>
-          ) : (
-            <ResponsiveContainer width="100%" height={280}>
-              <PieChart>
-                <Pie
-                  data={paymentPieData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={100}
-                  paddingAngle={2}
-                  dataKey="value"
-                >
-                  {paymentPieData.map((_, idx) => (
-                    <Cell key={idx} fill={PM_COLORS[idx % PM_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(value) => `¥${Number(value).toFixed(2)}`} />
-              </PieChart>
-            </ResponsiveContainer>
-          )}
-          <div className="flex flex-wrap gap-3 mt-2 justify-center">
-            {paymentPieData.map((d, idx) => (
-              <div key={d.name} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: PM_COLORS[idx % PM_COLORS.length] }} />
-                {d.name}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+        <Card>
+          <CardContent sx={{ p: 2.5, "&:last-child": { pb: 2.5 } }}>
+            <Typography variant="body2" sx={{ fontWeight: 600, mb: 2 }}>
+              支付方式占比
+            </Typography>
+            {paymentPieData.length === 0 ? (
+              <Box sx={{ textAlign: "center", py: 8 }}>
+                <Typography variant="body2" color="text.secondary">
+                  暂无数据
+                </Typography>
+              </Box>
+            ) : (
+              <ResponsiveContainer width="100%" height={280}>
+                <PieChart>
+                  <Pie
+                    data={paymentPieData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={100}
+                    paddingAngle={2}
+                    dataKey="value"
+                  >
+                    {paymentPieData.map((_, idx) => (
+                      <Cell key={idx} fill={PM_COLORS[idx % PM_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value) => `¥${Number(value).toFixed(2)}`} />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1.5, mt: 1, justifyContent: "center" }}>
+              {paymentPieData.map((d, idx) => (
+                <Box key={d.name} sx={{ display: "flex", alignItems: "center", gap: 0.75, fontSize: "0.75rem", color: "text.secondary" }}>
+                  <Box sx={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: PM_COLORS[idx % PM_COLORS.length] }} />
+                  {d.name}
+                </Box>
+              ))}
+            </Box>
+          </CardContent>
+        </Card>
+      </Box>
 
       {/* Full-width Category Ranking Table */}
-      <div className="bg-card border rounded-xl p-5">
-        <h3 className="text-sm font-medium mb-4">分类排行</h3>
-        {categoryData.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground text-sm">暂无数据</div>
-        ) : (
-          <table className="w-full">
-            <thead>
-              <tr className="border-b text-left text-xs text-muted-foreground">
-                <th className="pb-2 font-medium w-12">#</th>
-                <th className="pb-2 font-medium">分类</th>
-                <th className="pb-2 font-medium text-right">金额</th>
-                <th className="pb-2 font-medium text-right w-20">占比</th>
-                <th className="pb-2 font-medium text-right w-20">笔数</th>
-                <th className="pb-2 font-medium w-48">分布</th>
-              </tr>
-            </thead>
-            <tbody>
-              {categoryData.map((cat, idx) => {
-                const pct = ((cat.total / totalCategory) * 100).toFixed(1);
-                const barWidth = Math.max((cat.total / totalCategory) * 100, 1);
-                return (
-                  <tr key={cat.category} className="border-b last:border-0 hover:bg-muted/50 transition-colors">
-                    <td className="py-3 text-sm text-muted-foreground">{idx + 1}</td>
-                    <td className="py-3 text-sm">
-                      <span className="inline-flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: CAT_COLORS[idx % CAT_COLORS.length] }} />
-                        {cat.category}
-                      </span>
-                    </td>
-                    <td className="py-3 text-sm text-right font-medium">
-                      ¥{cat.total.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}
-                    </td>
-                    <td className="py-3 text-sm text-right text-muted-foreground">{pct}%</td>
-                    <td className="py-3 text-sm text-right text-muted-foreground">{cat.count}</td>
-                    <td className="py-3">
-                      <div className="h-2 bg-muted rounded-full overflow-hidden">
-                        <div
-                          className="h-full rounded-full transition-all"
-                          style={{
-                            width: `${barWidth}%`,
-                            backgroundColor: CAT_COLORS[idx % CAT_COLORS.length],
-                          }}
-                        />
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
-    </div>
+      <Card>
+        <CardContent sx={{ p: 2.5, "&:last-child": { pb: 2.5 } }}>
+          <Typography variant="body2" sx={{ fontWeight: 600, mb: 2 }}>
+            分类排行
+          </Typography>
+          {categoryData.length === 0 ? (
+            <Box sx={{ textAlign: "center", py: 8 }}>
+              <Typography variant="body2" color="text.secondary">
+                暂无数据
+              </Typography>
+            </Box>
+          ) : (
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ width: 48, fontWeight: 600 }}>#</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>分类</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 600 }}>金额</TableCell>
+                    <TableCell align="right" sx={{ width: 80, fontWeight: 600 }}>占比</TableCell>
+                    <TableCell align="right" sx={{ width: 80, fontWeight: 600 }}>笔数</TableCell>
+                    <TableCell sx={{ width: 192, fontWeight: 600 }}>分布</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {categoryData.map((cat, idx) => {
+                    const pct = ((cat.total / totalCategory) * 100).toFixed(1);
+                    const barWidth = Math.max((cat.total / totalCategory) * 100, 1);
+                    return (
+                      <TableRow key={cat.category} hover>
+                        <TableCell sx={{ color: "text.secondary" }}>{idx + 1}</TableCell>
+                        <TableCell>
+                          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                            <Box sx={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: CAT_COLORS[idx % CAT_COLORS.length] }} />
+                            {cat.category}
+                          </Box>
+                        </TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 600 }}>
+                          ¥{cat.total.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}
+                        </TableCell>
+                        <TableCell align="right" sx={{ color: "text.secondary" }}>{pct}%</TableCell>
+                        <TableCell align="right" sx={{ color: "text.secondary" }}>{cat.count}</TableCell>
+                        <TableCell>
+                          <Box sx={{ height: 8, borderRadius: 4, backgroundColor: "divider", overflow: "hidden" }}>
+                            <Box
+                              sx={{
+                                height: "100%",
+                                borderRadius: 4,
+                                width: `${barWidth}%`,
+                                backgroundColor: CAT_COLORS[idx % CAT_COLORS.length],
+                              }}
+                            />
+                          </Box>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </CardContent>
+      </Card>
+    </Box>
   );
 }
