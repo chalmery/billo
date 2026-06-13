@@ -111,7 +111,7 @@ export default function Settings() {
       {/* 2. 同步设置 */}
       <Section title="同步设置">
         <div className="flex items-center gap-3 mb-4">
-          {gmailConnected ? <CheckCircle2 className="h-5 w-5 text-green-500" /> : <AlertCircle className="h-5 w-5 text-yellow-500" />}
+          {gmailConnected ? <CheckCircle2 className="h-5 w-5 text-success" /> : <AlertCircle className="h-5 w-5 text-warning" />}
           <div><p className="text-sm font-medium">{gmailConnected ? "Gmail 已授权" : "Gmail 尚未授权"}</p>
             {syncInfo?.last_sync_at && <p className="text-xs text-muted-foreground">上次同步: {syncInfo.last_sync_at}</p>}
           </div>
@@ -147,7 +147,7 @@ export default function Settings() {
                 {cards.map((c) => <option key={c.id} value={c.id}>{c.name} (尾号{c.last_four})</option>)}
               </select>
               <Button size="sm" variant="outline" onClick={handleSyncIncremental} disabled={syncingIncremental}><RefreshCw className={`h-4 w-4 mr-1 ${syncingIncremental ? "animate-spin" : ""}`} />增量同步</Button>
-              <Button size="sm" onClick={handleSyncFull} disabled={syncingFull}><RefreshCw className={`h-4 w-4 mr-1 ${syncingFull ? "animate-spin" : ""}`} />全量同步</Button>
+              <Button size="sm" variant="outline" onClick={handleSyncFull} disabled={syncingFull}><RefreshCw className={`h-4 w-4 mr-1 ${syncingFull ? "animate-spin" : ""}`} />全量同步</Button>
             </div>
           </div>
         )}
@@ -218,8 +218,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function MsgBox({ msg }: { msg: StatusMsg }) {
   return (
-    <div className={`flex items-center gap-2 p-3 rounded-md text-sm ${msg.type === "success" ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
-      {msg.type === "success" ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <AlertCircle className="h-4 w-4 shrink-0" />}
+    <div className={`flex items-center gap-2 p-3 rounded-md text-sm ${msg.type === "success" ? "bg-success/15 text-success" : "bg-destructive/15 text-destructive"}`}>
+      {msg.type === "success" ? <CheckCircle2 className="h-4 w-4 shrink-0 text-success" /> : <AlertCircle className="h-4 w-4 shrink-0 text-destructive" />}
       {msg.text}
     </div>
   );

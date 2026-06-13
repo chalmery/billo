@@ -36,7 +36,7 @@ export default function Cards() {
   async function handleAdd() {
     if (!newName.trim() || !newLastFour.trim()) return;
     try {
-      await createCard(newName.trim(), newLastFour.trim());
+      await createCard(newName.trim(), newLastFour.trim(), CARD_COLORS[newColor]);
       setNewName(""); setNewLastFour(""); setNewColor(0); setShowDialog(false);
       loadCards();
     } catch (e) { console.error(e); }
@@ -95,7 +95,7 @@ export default function Cards() {
                 </div>
                 <div className="flex justify-between items-end mt-4">
                   <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/10 text-white/60 text-xs">
-                    <span className="w-1.5 h-1.5 rounded-full bg-green-400" />Gmail
+                    <span className="w-1.5 h-1.5 rounded-full bg-success" />Gmail
                   </span>
                   <span className="text-white/30 text-xs">{card.created_at.slice(0, 10)}</span>
                 </div>

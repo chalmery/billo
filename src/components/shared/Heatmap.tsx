@@ -107,13 +107,6 @@ export function Heatmap({ data, year, availableYears, onYearChange, thresholds, 
             ))}
           </div>
         </div>
-        <div className="flex items-center gap-1 mt-2" style={{ paddingLeft: '28px' }}>
-          <span className="text-xs text-muted-foreground">少</span>
-          {colors.map((color, i) => (
-            <div key={i} style={{ width: `${cellSize}px`, height: `${cellSize}px`, backgroundColor: color, borderRadius: '2px' }} />
-          ))}
-          <span className="text-xs text-muted-foreground">多</span>
-        </div>
       </div>
       <div className="flex flex-col gap-1">
         {sortedYears.map(y => (

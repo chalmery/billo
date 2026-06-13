@@ -120,7 +120,6 @@ export interface DashboardData {
   yearly_total: number
   yearly_change_pct: number | null
   daily_average: number
-  transaction_count: number
   max_single: number
   max_single_merchant: string
   heatmap_data: Record<string, HeatmapCell>

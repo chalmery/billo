@@ -12,8 +12,6 @@ export default function Transactions() {
   const [categoryFilter, setCategoryFilter] = useState("");
   const [paymentMethodFilter, setPaymentMethodFilter] = useState("");
   const [cardFilter, setCardFilter] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
   const [amountMin, setAmountMin] = useState("");
   const [amountMax, setAmountMax] = useState("");
   const [cards, setCards] = useState<Card[]>([]);
@@ -29,15 +27,13 @@ export default function Transactions() {
 
   useEffect(() => {
     loadTransactions();
-  }, [page, pageSize, cardFilter, categoryFilter, paymentMethodFilter, search, dateFrom, dateTo, amountMin, amountMax]);
+  }, [page, pageSize, cardFilter, categoryFilter, paymentMethodFilter, search, amountMin, amountMax]);
 
   async function loadTransactions() {
     setLoading(true);
     try {
       const result = await getTransactions({
         cardId: cardFilter ? Number(cardFilter) : undefined,
-        dateFrom: dateFrom || undefined,
-        dateTo: dateTo || undefined,
         category: categoryFilter || undefined,
         paymentMethod: paymentMethodFilter || undefined,
         merchant: search || undefined,
@@ -80,7 +76,7 @@ export default function Transactions() {
       <div className="flex gap-2">
         <input type="text" placeholder="搜索商户" value={search}
           onChange={e => { setSearch(e.target.value); resetFilters(); }}
-          className="flex-1 border rounded-md px-3 py-2 text-sm bg-background" />
+          className="w-44 border rounded-md px-3 py-2 text-sm bg-background" />
         <select value={categoryFilter}
           onChange={e => { setCategoryFilter(e.target.value); resetFilters(); }}
           className="flex-1 border rounded-md px-3 py-2 text-sm bg-background">
@@ -99,34 +95,28 @@ export default function Transactions() {
           <option value="">全部卡片</option>
           {cards.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
         </select>
-        <input type="date" value={dateFrom}
-          onChange={e => { setDateFrom(e.target.value); resetFilters(); }}
-          className="flex-1 border rounded-md px-3 py-2 text-sm bg-background" />
-        <input type="date" value={dateTo}
-          onChange={e => { setDateTo(e.target.value); resetFilters(); }}
-          className="flex-1 border rounded-md px-3 py-2 text-sm bg-background" />
-        <input type="number" placeholder="最低金额" value={amountMin}
+        <input type="number" placeholder="¥起" value={amountMin}
           onChange={e => { setAmountMin(e.target.value); resetFilters(); }}
-          className="flex-1 border rounded-md px-3 py-2 text-sm bg-background" />
-        <input type="number" placeholder="最高金额" value={amountMax}
+          className="w-20 border rounded-md px-2 py-2 text-sm bg-background" />
+        <input type="number" placeholder="¥止" value={amountMax}
           onChange={e => { setAmountMax(e.target.value); resetFilters(); }}
-          className="flex-1 border rounded-md px-3 py-2 text-sm bg-background" />
+          className="w-20 border rounded-md px-2 py-2 text-sm bg-background" />
       </div>
 
-      <div className="border rounded-lg overflow-hidden">
+      <div className="border rounded-lg">
         <table className="w-full">
           <thead>
-            <tr className="bg-muted border-b">
-              <th className="text-left px-4 py-3 text-sm font-medium">日期</th>
-              <th className="text-left px-4 py-3 text-sm font-medium">时间</th>
-              <th className="text-left px-4 py-3 text-sm font-medium">卡片</th>
-              <th className="text-left px-4 py-3 text-sm font-medium">商户</th>
-              <th className="text-left px-4 py-3 text-sm font-medium">支付方式</th>
-              <th className="text-left px-4 py-3 text-sm font-medium">分类</th>
-              <th className="text-right px-4 py-3 text-sm font-medium">金额</th>
+            <tr className="border-b bg-muted/50">
+              <th className="px-4 py-2.5 text-xs font-medium text-muted-foreground">日期</th>
+              <th className="px-4 py-2.5 text-xs font-medium text-muted-foreground">时间</th>
+              <th className="px-4 py-2.5 text-xs font-medium text-muted-foreground">卡片</th>
+              <th className="px-4 py-2.5 text-xs font-medium text-muted-foreground">商户</th>
+              <th className="px-4 py-2.5 text-xs font-medium text-muted-foreground">支付方式</th>
+              <th className="px-4 py-2.5 text-xs font-medium text-muted-foreground w-20">分类</th>
+              <th className="px-4 py-2.5 text-xs font-medium text-muted-foreground text-right">金额</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y">
             {loading ? (
               <tr>
                 <td colSpan={7} className="text-center py-12 text-muted-foreground">加载中...</td>
@@ -139,26 +129,26 @@ export default function Transactions() {
               </tr>
             ) : (
               transactions.map((tx) => (
-                <tr key={tx.id} className="border-b hover:bg-muted/50 transition-colors">
-                  <td className="px-4 py-3 text-sm">{tx.transaction_date}</td>
-                  <td className="px-4 py-3 text-sm text-muted-foreground">{tx.transaction_time ?? "-"}</td>
-                  <td className="px-4 py-3 text-sm text-muted-foreground">
+                <tr key={tx.id} className="hover:bg-muted/30 transition-colors">
+                  <td className="px-4 py-2.5 text-sm whitespace-nowrap">{tx.transaction_date}</td>
+                  <td className="px-4 py-2.5 text-sm text-muted-foreground whitespace-nowrap">{tx.transaction_time?.slice(0, 5) ?? "-"}</td>
+                  <td className="px-4 py-2.5 text-sm text-muted-foreground whitespace-nowrap">
                     {getCardLastFour(tx.card_id)}
                   </td>
-                  <td className="px-4 py-3 text-sm">{tx.merchant}</td>
-                  <td className="px-4 py-3 text-sm text-muted-foreground">{tx.payment_method ?? "-"}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-2.5 text-sm max-w-[180px] truncate">{tx.merchant}</td>
+                  <td className="px-4 py-2.5 text-sm text-muted-foreground">{tx.payment_method ?? "-"}</td>
+                  <td className="px-4 py-2.5">
                     <select
                       value={tx.category ?? "其他"}
                       onChange={(e) => handleCategoryChange(tx.id, e.target.value)}
-                      className="border rounded-md px-2 py-1 text-xs bg-background"
+                      className="border rounded px-1.5 py-1 text-sm bg-background"
                     >
                       {CATEGORIES.map((cat) => (
                         <option key={cat} value={cat}>{cat}</option>
                       ))}
                     </select>
                   </td>
-                  <td className="px-4 py-3 text-sm text-right font-medium text-destructive">
+                  <td className="px-4 py-2.5 text-sm text-right font-mono tabular-nums">
                     -¥{tx.amount.toFixed(2)}
                   </td>
                 </tr>

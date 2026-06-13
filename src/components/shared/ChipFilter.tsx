@@ -25,7 +25,7 @@ export function ChipFilter({ options, selected, onChange }: ChipFilterProps) {
         <button key={opt.key} onClick={() => toggle(opt.key)}
           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors
             ${selected.includes(opt.key)
-              ? 'bg-foreground text-background'
+              ? 'bg-primary text-primary-foreground'
               : 'border bg-background text-foreground hover:bg-muted'}`}>
           {opt.label}
           {opt.sublabel && (

@@ -16,8 +16,8 @@ export async function getCards(): Promise<Card[]> {
   return invoke("get_cards");
 }
 
-export async function createCard(name: string, lastFour: string): Promise<Card> {
-  return invoke("create_card", { name, lastFour });
+export async function createCard(name: string, lastFour: string, color: string): Promise<Card> {
+  return invoke("create_card", { name, lastFour, color });
 }
 
 export async function deleteCard(cardId: number): Promise<void> {

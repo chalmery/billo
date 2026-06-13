@@ -11,11 +11,11 @@ export function ToastContainer() {
         <div
           key={t.id}
           className={`flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg text-white text-sm animate-in slide-in-from-right ${
-            t.type === 'error' ? 'bg-red-900' : 'bg-foreground'
+            t.type === 'error' ? 'bg-destructive' : 'bg-foreground'
           }`}
         >
           {t.type === 'loading' && (
-            <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+            <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
           )}
           {t.type === 'success' && <span className="text-green-400">✓</span>}
           {t.type === 'error' && <span className="text-red-400">✗</span>}

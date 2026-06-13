@@ -114,7 +114,6 @@ pub struct DashboardData {
     pub yearly_total: f64,
     pub yearly_change_pct: Option<f64>,
     pub daily_average: f64,
-    pub transaction_count: i64,
     pub max_single: f64,
     pub max_single_merchant: String,
     pub heatmap_data: std::collections::HashMap<String, HeatmapCell>,
@@ -304,11 +303,11 @@ impl Database {
 
     // ===== Cards =====
 
-    pub fn create_card(&self, name: &str, last_four: &str) -> SqliteResult<Card> {
+    pub fn create_card(&self, name: &str, last_four: &str, color: &str) -> SqliteResult<Card> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO cards (name, last_four) VALUES (?1, ?2)",
-            params![name, last_four],
+            "INSERT INTO cards (name, last_four, color) VALUES (?1, ?2, ?3)",
+            params![name, last_four, color],
         )?;
         let id = conn.last_insert_rowid();
         Ok(conn.query_row(
@@ -1011,17 +1010,6 @@ impl Database {
             0.0
         };
 
-        // Transaction count this month
-        let transaction_count: i64 = conn
-            .query_row(
-                &format!(
-                    "SELECT COUNT(*) FROM transactions WHERE strftime('%Y-%m', transaction_date) = '{}' {}",
-                    current_ym, card_clause
-                ),
-                [],
-                |row| row.get(0),
-            )?;
-
         // Max single transaction this month
         let (max_single, max_single_merchant): (f64, String) = conn
             .query_row(
@@ -1072,7 +1060,6 @@ impl Database {
             yearly_total,
             yearly_change_pct,
             daily_average,
-            transaction_count,
             max_single,
             max_single_merchant,
             heatmap_data,

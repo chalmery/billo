@@ -31,10 +31,10 @@ pub async fn get_cards(db: tauri::State<'_, Arc<Database>>) -> Result<Vec<Card>,
 }
 
 #[tauri::command]
-pub async fn create_card(db: tauri::State<'_, Arc<Database>>, name: String, last_four: String) -> Result<Card, String> {
+pub async fn create_card(db: tauri::State<'_, Arc<Database>>, name: String, last_four: String, color: String) -> Result<Card, String> {
     let db = db.inner().clone();
     tokio::task::spawn_blocking(move || {
-        db.create_card(&name, &last_four).map_err(|e| e.to_string())
+        db.create_card(&name, &last_four, &color).map_err(|e| e.to_string())
     }).await.map_err(|e| e.to_string())?
 }
 

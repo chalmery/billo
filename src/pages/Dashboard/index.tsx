@@ -33,13 +33,19 @@ export default function Dashboard() {
     .filter((y, i, a) => a.indexOf(y) === i && y <= new Date().getFullYear())
     .sort((a, b) => b - a) : [year];
 
+  useEffect(() => {
+    if (availableYears.length > 0 && !availableYears.includes(year)) {
+      setYear(availableYears[0]);
+    }
+  }, [availableYears, year]);
+
   return (
     <div>
       {/* KPI Cards */}
       <div className="grid grid-cols-4 gap-4 mb-6">
-        <KpiCard title="本月消费" value={`¥${data?.monthly_total.toLocaleString() ?? '---'}`}
+        <KpiCard title="本月消费" value={`¥${(data?.monthly_total ?? 0).toLocaleString()}`}
           change={data?.monthly_change_pct} />
-        <KpiCard title="本年消费" value={`¥${data?.yearly_total.toLocaleString() ?? '---'}`}
+        <KpiCard title="本年消费" value={`¥${(data?.yearly_total ?? 0).toLocaleString()}`}
           change={data?.yearly_change_pct} />
         <KpiCard title="日均消费" value={data ? `¥${Math.round(data.daily_average)}` : '---'} />
         <KpiCard title="最大单笔" value={data ? `¥${data.max_single.toLocaleString()}` : '---'}
@@ -48,28 +54,35 @@ export default function Dashboard() {
 
       {/* Heatmap */}
       <div className="bg-card border rounded-xl p-5 mb-4">
-        <div className="flex justify-end mb-2">
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-            <span>少</span>
-            <div className="w-3 h-3 rounded-[2px]" style={{backgroundColor: heatmapColors[0]}} />
-            <div className="w-3 h-3 rounded-[2px]" style={{backgroundColor: heatmapColors[1]}} />
-            <div className="w-3 h-3 rounded-[2px]" style={{backgroundColor: heatmapColors[2]}} />
-            <div className="w-3 h-3 rounded-[2px]" style={{backgroundColor: heatmapColors[3]}} />
-            <div className="w-3 h-3 rounded-[2px]" style={{backgroundColor: heatmapColors[4]}} />
-            <span>多</span>
+        {data && availableYears.length > 0 ? (
+          <>
+            <div className="flex justify-end mb-2">
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                <span>少</span>
+                <div className="w-3 h-3 rounded-[2px]" style={{backgroundColor: heatmapColors[0]}} />
+                <div className="w-3 h-3 rounded-[2px]" style={{backgroundColor: heatmapColors[1]}} />
+                <div className="w-3 h-3 rounded-[2px]" style={{backgroundColor: heatmapColors[2]}} />
+                <div className="w-3 h-3 rounded-[2px]" style={{backgroundColor: heatmapColors[3]}} />
+                <div className="w-3 h-3 rounded-[2px]" style={{backgroundColor: heatmapColors[4]}} />
+                <span>多</span>
+              </div>
+            </div>
+            <Heatmap
+              data={data.heatmap_data}
+              year={year}
+              availableYears={availableYears}
+              onYearChange={setYear}
+              thresholds={heatmapThresholds}
+              colors={heatmapColors}
+            />
+          </>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+            <p className="text-lg mb-2">暂无消费数据</p>
+            <p className="text-sm">同步 Gmail 邮件或手动导入数据后，热力图将显示在这里</p>
           </div>
-        </div>
-        {data && availableYears.length > 0 && (
-          <Heatmap
-            data={data.heatmap_data}
-            year={availableYears.includes(year) ? year : availableYears[0]}
-            availableYears={availableYears}
-            onYearChange={setYear}
-            thresholds={heatmapThresholds}
-            colors={heatmapColors}
-          />
         )}
-        <div className="flex justify-between mt-3">
+        <div className="flex items-center justify-between mt-4">
           <span className="text-xs text-muted-foreground">
             {lastSync ? `上次同步：${lastSync}` : ''}
           </span>
@@ -88,7 +101,7 @@ function KpiCard({ title, value, change, sub }: {
       <div className="text-sm text-muted-foreground mb-1">{title}</div>
       <div className="text-2xl font-bold text-foreground">{value}</div>
       {change != null && (
-        <div className={`text-xs mt-1 ${change >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+        <div className={`text-xs mt-1 ${change >= 0 ? 'text-success' : 'text-destructive'}`}>
           {change >= 0 ? '↑' : '↓'} {Math.abs(change).toFixed(1)}% 较上月
         </div>
       )}

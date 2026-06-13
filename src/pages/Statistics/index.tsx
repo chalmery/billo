@@ -30,7 +30,6 @@ const PM_COLORS = ["#6366f1", "#f43f5e", "#0ea5e9", "#8b5cf6", "#64748b", "#10b9
 export default function Statistics() {
   const [cards, setCards] = useState<CardType[]>([]);
   const [selectedCards, setSelectedCards] = useState<string[]>(["all"]);
-  const [year, setYear] = useState(new Date().getFullYear());
   const [monthlyData, setMonthlyData] = useState<MonthlySummary[]>([]);
   const [prevMonthlyData, setPrevMonthlyData] = useState<MonthlySummary[]>([]);
   const [categoryData, setCategoryData] = useState<CategoryBreakdown[]>([]);
@@ -39,6 +38,7 @@ export default function Statistics() {
   const [loading, setLoading] = useState(true);
 
   const cardId = selectedCards.includes("all") ? null : Number(selectedCards[0]);
+  const year = new Date().getFullYear();
 
   useEffect(() => {
     getCards().then(setCards).catch(console.error);
@@ -46,7 +46,7 @@ export default function Statistics() {
 
   useEffect(() => {
     loadData();
-  }, [selectedCards, year]);
+  }, [selectedCards]);
 
   async function loadData() {
     setLoading(true);
@@ -119,15 +119,6 @@ export default function Statistics() {
         <div className="bg-card border rounded-xl p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-medium">月度消费趋势</h3>
-            <select
-              value={year}
-              onChange={(e) => setYear(Number(e.target.value))}
-              className="border rounded-md px-2 py-1 text-xs bg-background"
-            >
-              {[2026, 2025, 2024, 2023].filter((y) => y <= new Date().getFullYear()).map((y) => (
-                <option key={y} value={y}>{y}年</option>
-              ))}
-            </select>
           </div>
           <ResponsiveContainer width="100%" height={280}>
             <AreaChart data={mergedMonthly}>
