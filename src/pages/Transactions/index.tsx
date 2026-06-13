@@ -1,4 +1,8 @@
 import { useState, useEffect } from "react";
+import {
+  Box, Typography, TextField, Select, MenuItem, Table, TableHead, TableBody,
+  TableRow, TableCell, TableContainer, Paper, CircularProgress, FormControl,
+} from "@mui/material";
 import { Pagination } from "@/components/shared/Pagination";
 import { getCards, getTransactions, updateTransactionCategory } from "@/lib/api";
 import type { Card } from "@/types";
@@ -70,97 +74,141 @@ export default function Transactions() {
   function resetFilters() { setPage(1); }
 
   return (
-    <div className="space-y-4">
-      <h2 className="text-2xl font-bold tracking-tight">交易明细</h2>
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      <Typography variant="h5" sx={{ fontWeight: 700 }}>
+        交易明细
+      </Typography>
 
-      <div className="flex gap-2">
-        <input type="text" placeholder="搜索商户" value={search}
+      <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+        <TextField
+          size="small"
+          placeholder="搜索商户"
+          value={search}
           onChange={e => { setSearch(e.target.value); resetFilters(); }}
-          className="w-44 border rounded-md px-3 py-2 text-sm bg-background" />
-        <select value={categoryFilter}
-          onChange={e => { setCategoryFilter(e.target.value); resetFilters(); }}
-          className="flex-1 border rounded-md px-3 py-2 text-sm bg-background">
-          <option value="">全部分类</option>
-          {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <select value={paymentMethodFilter}
-          onChange={e => { setPaymentMethodFilter(e.target.value); resetFilters(); }}
-          className="flex-1 border rounded-md px-3 py-2 text-sm bg-background">
-          <option value="">全部支付方式</option>
-          {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
-        </select>
-        <select value={cardFilter}
-          onChange={e => { setCardFilter(e.target.value); resetFilters(); }}
-          className="flex-1 border rounded-md px-3 py-2 text-sm bg-background">
-          <option value="">全部卡片</option>
-          {cards.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
-        </select>
-        <input type="number" placeholder="¥起" value={amountMin}
+          sx={{ width: 176 }}
+        />
+        <FormControl size="small" sx={{ minWidth: 120, flex: 1 }}>
+          <Select
+            value={categoryFilter}
+            onChange={e => { setCategoryFilter(e.target.value); resetFilters(); }}
+            displayEmpty
+          >
+            <MenuItem value="">全部分类</MenuItem>
+            {CATEGORIES.map(c => <MenuItem key={c} value={c}>{c}</MenuItem>)}
+          </Select>
+        </FormControl>
+        <FormControl size="small" sx={{ minWidth: 120, flex: 1 }}>
+          <Select
+            value={paymentMethodFilter}
+            onChange={e => { setPaymentMethodFilter(e.target.value); resetFilters(); }}
+            displayEmpty
+          >
+            <MenuItem value="">全部支付方式</MenuItem>
+            {PAYMENT_METHODS.map(m => <MenuItem key={m} value={m}>{m}</MenuItem>)}
+          </Select>
+        </FormControl>
+        <FormControl size="small" sx={{ minWidth: 120, flex: 1 }}>
+          <Select
+            value={cardFilter}
+            onChange={e => { setCardFilter(e.target.value); resetFilters(); }}
+            displayEmpty
+          >
+            <MenuItem value="">全部卡片</MenuItem>
+            {cards.map(c => <MenuItem key={c.id} value={String(c.id)}>{c.name}</MenuItem>)}
+          </Select>
+        </FormControl>
+        <TextField
+          size="small"
+          type="number"
+          placeholder="¥起"
+          value={amountMin}
           onChange={e => { setAmountMin(e.target.value); resetFilters(); }}
-          className="w-20 border rounded-md px-2 py-2 text-sm bg-background" />
-        <input type="number" placeholder="¥止" value={amountMax}
+          sx={{ width: 80 }}
+        />
+        <TextField
+          size="small"
+          type="number"
+          placeholder="¥止"
+          value={amountMax}
           onChange={e => { setAmountMax(e.target.value); resetFilters(); }}
-          className="w-20 border rounded-md px-2 py-2 text-sm bg-background" />
-      </div>
+          sx={{ width: 80 }}
+        />
+      </Box>
 
-      <div className="border rounded-lg">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b bg-muted/50">
-              <th className="px-4 py-2.5 text-xs font-medium text-muted-foreground">日期</th>
-              <th className="px-4 py-2.5 text-xs font-medium text-muted-foreground">时间</th>
-              <th className="px-4 py-2.5 text-xs font-medium text-muted-foreground">卡片</th>
-              <th className="px-4 py-2.5 text-xs font-medium text-muted-foreground">商户</th>
-              <th className="px-4 py-2.5 text-xs font-medium text-muted-foreground">支付方式</th>
-              <th className="px-4 py-2.5 text-xs font-medium text-muted-foreground w-20">分类</th>
-              <th className="px-4 py-2.5 text-xs font-medium text-muted-foreground text-right">金额</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y">
+      <TableContainer component={Paper} variant="outlined">
+        <Table size="small">
+          <TableHead>
+            <TableRow sx={{ backgroundColor: "action.hover" }}>
+              <TableCell sx={{ fontSize: "0.75rem", fontWeight: 500, color: "text.secondary" }}>日期</TableCell>
+              <TableCell sx={{ fontSize: "0.75rem", fontWeight: 500, color: "text.secondary" }}>时间</TableCell>
+              <TableCell sx={{ fontSize: "0.75rem", fontWeight: 500, color: "text.secondary" }}>卡片</TableCell>
+              <TableCell sx={{ fontSize: "0.75rem", fontWeight: 500, color: "text.secondary" }}>商户</TableCell>
+              <TableCell sx={{ fontSize: "0.75rem", fontWeight: 500, color: "text.secondary" }}>支付方式</TableCell>
+              <TableCell sx={{ fontSize: "0.75rem", fontWeight: 500, color: "text.secondary", width: 80 }}>分类</TableCell>
+              <TableCell sx={{ fontSize: "0.75rem", fontWeight: 500, color: "text.secondary" }} align="right">金额</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
             {loading ? (
-              <tr>
-                <td colSpan={7} className="text-center py-12 text-muted-foreground">加载中...</td>
-              </tr>
+              <TableRow>
+                <TableCell colSpan={7} align="center" sx={{ py: 6, color: "text.secondary" }}>
+                  <CircularProgress size={24} sx={{ mr: 1 }} />
+                  加载中...
+                </TableCell>
+              </TableRow>
             ) : transactions.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="text-center py-12 text-muted-foreground">
+              <TableRow>
+                <TableCell colSpan={7} align="center" sx={{ py: 6, color: "text.secondary" }}>
                   暂无交易记录，请先在设置中导入邮件。
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ) : (
               transactions.map((tx) => (
-                <tr key={tx.id} className="hover:bg-muted/30 transition-colors">
-                  <td className="px-4 py-2.5 text-sm whitespace-nowrap">{tx.transaction_date}</td>
-                  <td className="px-4 py-2.5 text-sm text-muted-foreground whitespace-nowrap">{tx.transaction_time?.slice(0, 5) ?? "-"}</td>
-                  <td className="px-4 py-2.5 text-sm text-muted-foreground whitespace-nowrap">
+                <TableRow
+                  key={tx.id}
+                  hover
+                  sx={{ "&:last-child td, &:last-child th": { border: 0 } }}
+                >
+                  <TableCell sx={{ fontSize: "0.875rem", whiteSpace: "nowrap" }}>{tx.transaction_date}</TableCell>
+                  <TableCell sx={{ fontSize: "0.875rem", color: "text.secondary", whiteSpace: "nowrap" }}>
+                    {tx.transaction_time?.slice(0, 5) ?? "-"}
+                  </TableCell>
+                  <TableCell sx={{ fontSize: "0.875rem", color: "text.secondary", whiteSpace: "nowrap" }}>
                     {getCardLastFour(tx.card_id)}
-                  </td>
-                  <td className="px-4 py-2.5 text-sm max-w-[180px] truncate">{tx.merchant}</td>
-                  <td className="px-4 py-2.5 text-sm text-muted-foreground">{tx.payment_method ?? "-"}</td>
-                  <td className="px-4 py-2.5">
-                    <select
-                      value={tx.category ?? "其他"}
-                      onChange={(e) => handleCategoryChange(tx.id, e.target.value)}
-                      className="border rounded px-1.5 py-1 text-sm bg-background"
-                    >
-                      {CATEGORIES.map((cat) => (
-                        <option key={cat} value={cat}>{cat}</option>
-                      ))}
-                    </select>
-                  </td>
-                  <td className="px-4 py-2.5 text-sm text-right font-mono tabular-nums">
+                  </TableCell>
+                  <TableCell sx={{ fontSize: "0.875rem", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {tx.merchant}
+                  </TableCell>
+                  <TableCell sx={{ fontSize: "0.875rem", color: "text.secondary" }}>
+                    {tx.payment_method ?? "-"}
+                  </TableCell>
+                  <TableCell>
+                    <FormControl size="small" sx={{ minWidth: 80 }}>
+                      <Select
+                        value={tx.category ?? "其他"}
+                        onChange={(e) => handleCategoryChange(tx.id, e.target.value)}
+                      >
+                        {CATEGORIES.map((cat) => (
+                          <MenuItem key={cat} value={cat}>{cat}</MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </TableCell>
+                  <TableCell sx={{ fontSize: "0.875rem", textAlign: "right", fontFamily: "monospace" }}>
                     -¥{tx.amount.toFixed(2)}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))
             )}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+      </TableContainer>
 
       {total > 0 && (
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-muted-foreground">共 {total} 条</span>
+        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <Typography variant="body2" color="text.secondary">
+            共 {total} 条
+          </Typography>
           <Pagination
             current={page}
             total={total}
@@ -168,8 +216,8 @@ export default function Transactions() {
             onPageChange={(p) => setPage(p)}
             onPageSizeChange={(s) => { setPageSize(s); setPage(1); }}
           />
-        </div>
+        </Box>
       )}
-    </div>
+    </Box>
   );
 }
