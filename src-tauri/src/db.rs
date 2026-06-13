@@ -127,6 +127,48 @@ pub struct HeatmapCell {
     pub categories: Vec<String>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct YearlyTotal {
+    pub year: i32,
+    pub total: f64,
+    pub count: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PaymentMethodBreakdown {
+    pub method: String,
+    pub total: f64,
+    pub count: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CardDetail {
+    pub card: Card,
+    pub email_count: i64,
+    pub transaction_count: i64,
+    pub sync_logs: Vec<SyncLog>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EnrichedDailySummary {
+    pub id: i64,
+    pub card_id: i64,
+    pub card_name: String,
+    pub card_last_four: String,
+    pub email_date: String,
+    pub transaction_count: i64,
+    pub total_amount: f64,
+    pub fetched_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CategoryRule {
+    pub id: i64,
+    pub pattern: String,
+    pub category: String,
+    pub created_at: String,
+}
+
 impl Database {
     pub fn new(db_path: &str) -> SqliteResult<Self> {
         let conn = Connection::open(db_path)?;
@@ -479,6 +521,7 @@ impl Database {
         date_from: Option<&str>,
         date_to: Option<&str>,
         category: Option<&str>,
+        payment_method: Option<&str>,
         merchant: Option<&str>,
         amount_min: Option<f64>,
         amount_max: Option<f64>,
@@ -500,6 +543,9 @@ impl Database {
         }
         if let Some(c) = category {
             conditions.push(format!("t.category = '{}'", c));
+        }
+        if let Some(pm) = payment_method {
+            conditions.push(format!("t.payment_method = '{}'", pm.replace('\'', "''")));
         }
         if let Some(m) = merchant {
             conditions.push(format!("t.merchant LIKE '%{}%'", m.replace('\'', "''")));
@@ -1031,5 +1077,240 @@ impl Database {
             max_single_merchant,
             heatmap_data,
         })
+    }
+
+    pub fn get_yearly_totals(&self, card_id: Option<i64>) -> SqliteResult<Vec<YearlyTotal>> {
+        let conn = self.conn.lock().unwrap();
+        let card_filter = if let Some(cid) = card_id {
+            format!("WHERE card_id = {}", cid)
+        } else {
+            String::new()
+        };
+        let sql = format!(
+            "SELECT CAST(strftime('%Y', transaction_date) AS INTEGER) as year,
+                    SUM(amount) as total, COUNT(*) as count
+             FROM transactions {}
+             GROUP BY year ORDER BY year DESC",
+            card_filter
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let results = stmt
+            .query_map([], |row| {
+                Ok(YearlyTotal {
+                    year: row.get(0)?,
+                    total: row.get(1)?,
+                    count: row.get(2)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(results)
+    }
+
+    pub fn get_payment_method_breakdown(
+        &self,
+        card_id: Option<i64>,
+        date_from: &str,
+        date_to: &str,
+    ) -> SqliteResult<Vec<PaymentMethodBreakdown>> {
+        let conn = self.conn.lock().unwrap();
+        let card_filter = if let Some(cid) = card_id {
+            format!("AND card_id = {}", cid)
+        } else {
+            String::new()
+        };
+        let sql = format!(
+            "SELECT COALESCE(payment_method, '其他') as method,
+                    SUM(amount) as total, COUNT(*) as count
+             FROM transactions
+             WHERE transaction_date >= '{}' AND transaction_date <= '{}' {}
+             GROUP BY method ORDER BY total DESC",
+            date_from, date_to, card_filter
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let results = stmt
+            .query_map([], |row| {
+                Ok(PaymentMethodBreakdown {
+                    method: row.get(0)?,
+                    total: row.get(1)?,
+                    count: row.get(2)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(results)
+    }
+
+    pub fn get_card_detail(&self, card_id: i64) -> SqliteResult<Option<CardDetail>> {
+        let conn = self.conn.lock().unwrap();
+        let card = match self.get_card(card_id)? {
+            Some(c) => c,
+            None => return Ok(None),
+        };
+
+        let email_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM daily_summaries WHERE card_id = ?1",
+            params![card_id],
+            |row| row.get(0),
+        )?;
+
+        let transaction_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM transactions WHERE card_id = ?1",
+            params![card_id],
+            |row| row.get(0),
+        )?;
+
+        let mut stmt = conn.prepare(
+            "SELECT id, card_id, status, new_emails, new_transactions, message, created_at
+             FROM sync_logs WHERE card_id = ?1 ORDER BY created_at DESC LIMIT 50"
+        )?;
+        let sync_logs = stmt
+            .query_map(params![card_id], |row| {
+                Ok(SyncLog {
+                    id: row.get(0)?,
+                    card_id: row.get(1)?,
+                    status: row.get(2)?,
+                    new_emails: row.get(3)?,
+                    new_transactions: row.get(4)?,
+                    message: row.get(5)?,
+                    created_at: row.get(6)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(Some(CardDetail {
+            card,
+            email_count,
+            transaction_count,
+            sync_logs,
+        }))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn update_card(
+        &self,
+        id: i64,
+        name: &str,
+        last_four: &str,
+        bank: &str,
+        parser_profile: &str,
+        color: &str,
+        sync_method: Option<&str>,
+        sync_config: Option<&str>,
+    ) -> SqliteResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE cards SET name=?1, last_four=?2, bank=?3, parser_profile=?4, color=?5, sync_method=?6, sync_config=?7 WHERE id=?8",
+            params![name, last_four, bank, parser_profile, color, sync_method, sync_config, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_enriched_daily_summaries(
+        &self,
+        card_id: Option<i64>,
+        page: i64,
+        page_size: i64,
+    ) -> SqliteResult<PaginatedResult<EnrichedDailySummary>> {
+        let conn = self.conn.lock().unwrap();
+        let card_filter = if let Some(cid) = card_id {
+            format!("AND ds.card_id = {}", cid)
+        } else {
+            String::new()
+        };
+
+        let count_sql = format!(
+            "SELECT COUNT(*) FROM daily_summaries ds WHERE 1=1 {}",
+            card_filter
+        );
+        let total: i64 = conn.query_row(&count_sql, [], |row| row.get(0))?;
+
+        let offset = (page - 1) * page_size;
+        let query_sql = format!(
+            "SELECT ds.id, ds.card_id, c.name, c.last_four, ds.email_date,
+                    COALESCE(t.tx_count, 0) as tx_count,
+                    COALESCE(t.total_amount, 0) as total_amount,
+                    ds.fetched_at
+             FROM daily_summaries ds
+             JOIN cards c ON ds.card_id = c.id
+             LEFT JOIN (
+                 SELECT daily_summary_id, COUNT(*) as tx_count, SUM(amount) as total_amount
+                 FROM transactions
+                 GROUP BY daily_summary_id
+             ) t ON ds.id = t.daily_summary_id
+             WHERE 1=1 {}
+             ORDER BY ds.email_date DESC
+             LIMIT {} OFFSET {}",
+            card_filter, page_size, offset
+        );
+
+        let mut stmt = conn.prepare(&query_sql)?;
+        let items = stmt
+            .query_map([], |row| {
+                Ok(EnrichedDailySummary {
+                    id: row.get(0)?,
+                    card_id: row.get(1)?,
+                    card_name: row.get(2)?,
+                    card_last_four: row.get(3)?,
+                    email_date: row.get(4)?,
+                    transaction_count: row.get(5)?,
+                    total_amount: row.get(6)?,
+                    fetched_at: row.get(7)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(PaginatedResult { items, total, page, page_size })
+    }
+
+    pub fn get_category_rules(&self) -> SqliteResult<Vec<CategoryRule>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, pattern, category, created_at FROM category_rules ORDER BY id ASC"
+        )?;
+        let rules = stmt
+            .query_map([], |row| {
+                Ok(CategoryRule {
+                    id: row.get(0)?,
+                    pattern: row.get(1)?,
+                    category: row.get(2)?,
+                    created_at: row.get(3)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rules)
+    }
+
+    pub fn add_category_rule(&self, pattern: &str, category: &str) -> SqliteResult<CategoryRule> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO category_rules (pattern, category) VALUES (?1, ?2)",
+            params![pattern, category],
+        )?;
+        let id = conn.last_insert_rowid();
+        Ok(CategoryRule {
+            id,
+            pattern: pattern.to_string(),
+            category: category.to_string(),
+            created_at: String::new(),
+        })
+    }
+
+    pub fn update_category_rule(&self, id: i64, pattern: &str, category: &str) -> SqliteResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE category_rules SET pattern=?1, category=?2 WHERE id=?3",
+            params![pattern, category, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_category_rule(&self, id: i64) -> SqliteResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM category_rules WHERE id=?1", params![id])?;
+        Ok(())
     }
 }

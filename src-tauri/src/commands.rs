@@ -1,4 +1,4 @@
-use crate::db::{Database, Card, Transaction, MonthlySummary, CategoryBreakdown, CreditTrend, DailySummary, PaginatedResult, SyncState, ParserProfile, DashboardData};
+use crate::db::{Database, Card, CardDetail, CategoryRule, EnrichedDailySummary, Transaction, MonthlySummary, CategoryBreakdown, CreditTrend, DailySummary, PaginatedResult, SyncState, ParserProfile, DashboardData, YearlyTotal, PaymentMethodBreakdown};
 use crate::gmail::{GmailConfig, GmailSyncResult};
 use crate::parser::{parse_email_html, ParseResult};
 use std::sync::Arc;
@@ -114,6 +114,7 @@ pub async fn get_transactions(
     date_from: Option<String>,
     date_to: Option<String>,
     category: Option<String>,
+    payment_method: Option<String>,
     merchant: Option<String>,
     amount_min: Option<f64>,
     amount_max: Option<f64>,
@@ -124,7 +125,7 @@ pub async fn get_transactions(
     let p = page.unwrap_or(1);
     let ps = page_size.unwrap_or(50);
     tokio::task::spawn_blocking(move || {
-        db.get_transactions(card_id, date_from.as_deref(), date_to.as_deref(), category.as_deref(), merchant.as_deref(), amount_min, amount_max, p, ps)
+        db.get_transactions(card_id, date_from.as_deref(), date_to.as_deref(), category.as_deref(), payment_method.as_deref(), merchant.as_deref(), amount_min, amount_max, p, ps)
             .map_err(|e| e.to_string())
     }).await.map_err(|e| e.to_string())?
 }
@@ -501,4 +502,116 @@ pub async fn get_dashboard_data(
     tokio::task::spawn_blocking(move || {
         db.get_dashboard_data(&card_ids, year).map_err(|e| e.to_string())
     }).await.map_err(|e| e.to_string())?
+}
+
+// ===== Statistics =====
+
+#[tauri::command]
+pub async fn get_yearly_totals(
+    db: tauri::State<'_, Arc<Database>>,
+    card_id: Option<i64>,
+) -> Result<Vec<YearlyTotal>, String> {
+    let db = db.inner().clone();
+    tokio::task::spawn_blocking(move || {
+        db.get_yearly_totals(card_id).map_err(|e| e.to_string())
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn get_payment_method_breakdown(
+    db: tauri::State<'_, Arc<Database>>,
+    card_id: Option<i64>,
+    date_from: String,
+    date_to: String,
+) -> Result<Vec<PaymentMethodBreakdown>, String> {
+    let db = db.inner().clone();
+    tokio::task::spawn_blocking(move || {
+        db.get_payment_method_breakdown(card_id, &date_from, &date_to).map_err(|e| e.to_string())
+    }).await.map_err(|e| e.to_string())?
+}
+
+// ===== Card Detail =====
+
+#[tauri::command]
+pub async fn get_card_detail(
+    db: tauri::State<'_, Arc<Database>>,
+    card_id: i64,
+) -> Result<Option<CardDetail>, String> {
+    let db = db.inner().clone();
+    tokio::task::spawn_blocking(move || {
+        db.get_card_detail(card_id).map_err(|e| e.to_string())
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn update_card(
+    db: tauri::State<'_, Arc<Database>>,
+    id: i64,
+    name: String,
+    last_four: String,
+    bank: String,
+    parser_profile: String,
+    color: String,
+    sync_method: Option<String>,
+    sync_config: Option<String>,
+) -> Result<(), String> {
+    let db = db.inner().clone();
+    tokio::task::spawn_blocking(move || {
+        db.update_card(id, &name, &last_four, &bank, &parser_profile, &color, sync_method.as_deref(), sync_config.as_deref())
+            .map_err(|e| e.to_string())
+    }).await.map_err(|e| e.to_string())?
+}
+
+// ===== Enriched Daily Summaries =====
+
+#[tauri::command]
+pub async fn get_enriched_daily_summaries(
+    db: tauri::State<'_, Arc<Database>>,
+    card_id: Option<i64>,
+    page: Option<i64>,
+    page_size: Option<i64>,
+) -> Result<PaginatedResult<EnrichedDailySummary>, String> {
+    let db = db.inner().clone();
+    let p = page.unwrap_or(1);
+    let ps = page_size.unwrap_or(20);
+    tokio::task::spawn_blocking(move || {
+        db.get_enriched_daily_summaries(card_id, p, ps).map_err(|e| e.to_string())
+    }).await.map_err(|e| e.to_string())?
+}
+
+// ===== Category Rules =====
+
+#[tauri::command]
+pub fn get_category_rules(
+    db: tauri::State<'_, Arc<Database>>,
+) -> Result<Vec<CategoryRule>, String> {
+    db.get_category_rules().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn add_category_rule(
+    db: tauri::State<'_, Arc<Database>>,
+    pattern: String,
+    category: String,
+) -> Result<CategoryRule, String> {
+    db.add_category_rule(&pattern, &category).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_category_rule(
+    db: tauri::State<'_, Arc<Database>>,
+    id: i64,
+    pattern: String,
+    category: String,
+) -> Result<(), String> {
+    db.update_category_rule(id, &pattern, &category).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_category_rule(
+    db: tauri::State<'_, Arc<Database>>,
+    id: i64,
+) -> Result<(), String> {
+    db.delete_category_rule(id).map_err(|e| e.to_string())
 }
