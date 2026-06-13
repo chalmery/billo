@@ -21,7 +21,7 @@ export default function Layout() {
   return (
     <div className="flex min-h-screen bg-background">
       {/* Sidebar */}
-      <aside className="w-56 border-r border-border bg-card flex flex-col">
+      <aside className="w-56 h-screen sticky top-0 border-r border-border bg-card flex flex-col">
         <div className="px-4 py-5 border-b border-border">
           <h1 className="text-xl font-bold text-primary">Billo</h1>
           <p className="text-xs text-muted-foreground mt-0.5">信用卡账单统计</p>
@@ -51,7 +51,7 @@ export default function Layout() {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 overflow-y-auto">
         <div className="max-w-6xl mx-auto p-6">
           <Outlet />
         </div>
