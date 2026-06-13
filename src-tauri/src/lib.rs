@@ -57,6 +57,10 @@ pub fn run() {
             commands::gmail_sync_full,
             commands::get_all_daily_summaries,
             commands::get_raw_email,
+            commands::get_parser_profiles,
+            commands::create_parser_profile,
+            commands::update_parser_profile,
+            commands::delete_parser_profile,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

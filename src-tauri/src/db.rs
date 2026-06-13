@@ -746,3 +746,91 @@ pub fn update_sync_state(&self) -> SqliteResult<()> {
         Ok(())
     }
 }
+
+impl Database {
+    pub fn get_parser_profiles(&self) -> SqliteResult<Vec<ParserProfile>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, is_builtin, sender_pattern, subject_pattern,
+                    date_regex, time_regex, amount_regex, card_last_four_regex,
+                    merchant_regex, created_at
+             FROM parser_profiles ORDER BY is_builtin DESC, id ASC"
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(ParserProfile {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                is_builtin: row.get::<_, i64>(2)? != 0,
+                sender_pattern: row.get(3)?,
+                subject_pattern: row.get(4)?,
+                date_regex: row.get(5)?,
+                time_regex: row.get(6)?,
+                amount_regex: row.get(7)?,
+                card_last_four_regex: row.get(8)?,
+                merchant_regex: row.get(9)?,
+                created_at: row.get(10)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn get_parser_profile_by_name(&self, name: &str) -> SqliteResult<Option<ParserProfile>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, is_builtin, sender_pattern, subject_pattern,
+                    date_regex, time_regex, amount_regex, card_last_four_regex,
+                    merchant_regex, created_at
+             FROM parser_profiles WHERE name = ?1"
+        )?;
+        let mut rows = stmt.query_map(params![name], |row| {
+            Ok(ParserProfile {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                is_builtin: row.get::<_, i64>(2)? != 0,
+                sender_pattern: row.get(3)?,
+                subject_pattern: row.get(4)?,
+                date_regex: row.get(5)?,
+                time_regex: row.get(6)?,
+                amount_regex: row.get(7)?,
+                card_last_four_regex: row.get(8)?,
+                merchant_regex: row.get(9)?,
+                created_at: row.get(10)?,
+            })
+        })?;
+        Ok(rows.next().transpose()?)
+    }
+
+    pub fn create_parser_profile(&self, p: &ParserProfile) -> SqliteResult<i64> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO parser_profiles (name, is_builtin, sender_pattern, subject_pattern,
+                 date_regex, time_regex, amount_regex, card_last_four_regex, merchant_regex)
+             VALUES (?1, 0, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            rusqlite::params![p.name, p.sender_pattern, p.subject_pattern,
+                p.date_regex, p.time_regex, p.amount_regex, p.card_last_four_regex, p.merchant_regex],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn update_parser_profile(&self, p: &ParserProfile) -> SqliteResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE parser_profiles SET name=?1, sender_pattern=?2, subject_pattern=?3,
+                 date_regex=?4, time_regex=?5, amount_regex=?6, card_last_four_regex=?7,
+                 merchant_regex=?8 WHERE id=?9 AND is_builtin=0",
+            rusqlite::params![p.name, p.sender_pattern, p.subject_pattern,
+                p.date_regex, p.time_regex, p.amount_regex, p.card_last_four_regex,
+                p.merchant_regex, p.id],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_parser_profile(&self, id: i64) -> SqliteResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "DELETE FROM parser_profiles WHERE id=?1 AND is_builtin=0",
+            rusqlite::params![id],
+        )?;
+        Ok(())
+    }
+}

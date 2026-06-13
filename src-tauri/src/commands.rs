@@ -1,4 +1,4 @@
-use crate::db::{Database, Card, Transaction, MonthlySummary, CategoryBreakdown, CreditTrend, DailySummary, PaginatedResult, SyncState};
+use crate::db::{Database, Card, Transaction, MonthlySummary, CategoryBreakdown, CreditTrend, DailySummary, PaginatedResult, SyncState, ParserProfile};
 use crate::gmail::{GmailConfig, GmailSyncResult};
 use crate::parser::{parse_email_html, default_cmb_profile, ParseResult};
 use std::sync::Arc;
@@ -428,4 +428,37 @@ pub async fn get_raw_email(
     tokio::task::spawn_blocking(move || {
         db.get_raw_email(summary_id).map_err(|e| e.to_string())
     }).await.map_err(|e| e.to_string())?
+}
+
+// ===== Parser Profiles =====
+
+#[tauri::command]
+pub fn get_parser_profiles(
+    db: tauri::State<'_, Arc<Database>>,
+) -> Result<Vec<ParserProfile>, String> {
+    db.get_parser_profiles().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_parser_profile(
+    db: tauri::State<'_, Arc<Database>>,
+    profile: ParserProfile,
+) -> Result<i64, String> {
+    db.create_parser_profile(&profile).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_parser_profile(
+    db: tauri::State<'_, Arc<Database>>,
+    profile: ParserProfile,
+) -> Result<(), String> {
+    db.update_parser_profile(&profile).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_parser_profile(
+    db: tauri::State<'_, Arc<Database>>,
+    id: i64,
+) -> Result<(), String> {
+    db.delete_parser_profile(id).map_err(|e| e.to_string())
 }
