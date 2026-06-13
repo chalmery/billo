@@ -6,19 +6,23 @@ import Statistics from "@/pages/Statistics";
 import Cards from "@/pages/Cards";
 import Settings from "@/pages/Settings";
 import Emails from "@/pages/Emails";
+import { ToastContainer } from "@/components/ui/toast";
 
 function App() {
   return (
-    <Routes>
-      <Route element={<Layout />}>
-        <Route index element={<Dashboard />} />
-        <Route path="transactions" element={<Transactions />} />
-        <Route path="statistics" element={<Statistics />} />
-        <Route path="cards" element={<Cards />} />
-        <Route path="emails" element={<Emails />} />
-        <Route path="settings" element={<Settings />} />
-      </Route>
-    </Routes>
+    <>
+      <Routes>
+        <Route element={<Layout />}>
+          <Route index element={<Dashboard />} />
+          <Route path="transactions" element={<Transactions />} />
+          <Route path="statistics" element={<Statistics />} />
+          <Route path="cards" element={<Cards />} />
+          <Route path="emails" element={<Emails />} />
+          <Route path="settings" element={<Settings />} />
+        </Route>
+      </Routes>
+      <ToastContainer />
+    </>
   );
 }
 
