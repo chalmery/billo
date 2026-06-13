@@ -216,7 +216,7 @@ pub fn is_configured(&self) -> bool {
 
         let mut query = format!("from:{}", "ccsvc@message.cmbchina.com");
         if let Some(date) = since_date {
-            query.push_str(&format!(" after:{}", date));
+            query.push_str(&format!(" after:{}", date.replace('-', "/")));
         }
         let mut all_snippets: Vec<GmailMessageSnippet> = Vec::new();
         let mut page_token: Option<String> = None;
