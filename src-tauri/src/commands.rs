@@ -1,6 +1,6 @@
 use crate::db::{Database, Card, Transaction, MonthlySummary, CategoryBreakdown, CreditTrend, DailySummary, PaginatedResult, SyncState};
 use crate::gmail::{GmailConfig, GmailSyncResult};
-use crate::parser::parse_email_html;
+use crate::parser::{parse_email_html, default_cmb_profile, ParseResult};
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 
@@ -31,10 +31,15 @@ pub async fn delete_card(db: tauri::State<'_, Arc<Database>>, card_id: i64) -> R
 }
 
 #[tauri::command]
-pub async fn parse_email_content(html_content: String) -> Result<crate::parser::ParsedEmail, String> {
+pub async fn parse_email_content(html_content: String) -> Result<ParseResult, String> {
     tokio::task::spawn_blocking(move || {
-        parse_email_html(&html_content)
-            .ok_or_else(|| "无法解析邮件内容，请确认是招商银行每日信用管家邮件".to_string())
+        let profile = default_cmb_profile();
+        let result = parse_email_html(&html_content, &profile);
+        if result.email_date.is_none() && result.transactions.is_empty() {
+            Err("无法解析邮件内容，请确认是招商银行每日信用管家邮件".to_string())
+        } else {
+            Ok(result)
+        }
     }).await.map_err(|e| e.to_string())?
 }
 
@@ -47,12 +52,15 @@ pub async fn import_email(
 ) -> Result<String, String> {
     let db = db.inner().clone();
     tokio::task::spawn_blocking(move || {
-        let parsed = parse_email_html(&html_content)
-            .ok_or_else(|| "无法解析邮件内容，请确认是招商银行每日信用管家邮件".to_string())?;
+        let profile = default_cmb_profile();
+        let parsed = parse_email_html(&html_content, &profile);
+
+        let email_date = parsed.email_date
+            .ok_or_else(|| "无法解析邮件日期，请确认是招商银行每日信用管家邮件".to_string())?;
 
         let summary_id = db.upsert_daily_summary(
             card_id,
-            &parsed.email_date,
+            &email_date,
             parsed.available_credit,
             parsed.points_balance,
             &email_uid,
@@ -64,8 +72,8 @@ pub async fn import_email(
             db.insert_transaction(
                 card_id,
                 summary_id,
-                &parsed.email_date,
-                Some(&tx.time),
+                &email_date,
+                Some(&tx.transaction_time),
                 tx.amount,
                 &tx.currency,
                 &tx.merchant,
@@ -74,7 +82,7 @@ pub async fn import_email(
             tx_count += 1;
         }
 
-        Ok(format!("成功导入 {} 的交易: 日汇总 + {} 笔交易", parsed.email_date, tx_count))
+        Ok(format!("成功导入 {} 的交易: 日汇总 + {} 笔交易", email_date, tx_count))
     }).await.map_err(|e| e.to_string())?
 }
 
@@ -334,10 +342,13 @@ fn sync_emails(
             }
         };
 
-        let parsed = match parse_email_html(&html) {
-            Some(p) => p,
+        let profile = default_cmb_profile();
+        let parsed = parse_email_html(&html, &profile);
+
+        let email_date = match parsed.email_date {
+            Some(d) => d,
             None => {
-                result.errors.push(format!("Failed to parse message {}", msg.id));
+                result.errors.push(format!("Failed to parse date from message {}", msg.id));
                 continue;
             }
         };
@@ -352,7 +363,7 @@ fn sync_emails(
 
         let summary_id = match db.upsert_daily_summary(
             card_id,
-            &parsed.email_date,
+            &email_date,
             parsed.available_credit,
             parsed.points_balance,
             &msg.id,
@@ -371,8 +382,8 @@ fn sync_emails(
             if let Err(e) = db.insert_transaction(
                 card_id,
                 summary_id,
-                &parsed.email_date,
-                Some(&tx.time),
+                &email_date,
+                Some(&tx.transaction_time),
                 tx.amount,
                 &tx.currency,
                 &tx.merchant,
