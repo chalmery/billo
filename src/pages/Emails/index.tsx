@@ -1,12 +1,16 @@
 import { useEffect, useState } from "react";
+import {
+  Box, Typography, Table, TableHead, TableBody, TableRow, TableCell,
+  TableContainer, Paper, Button, Dialog, DialogTitle, DialogContent,
+  CircularProgress, Card, CardContent,
+} from "@mui/material";
+import MailOutlined from "@mui/icons-material/MailOutlined";
+import Visibility from "@mui/icons-material/Visibility";
 import { ChipFilter } from "@/components/shared/ChipFilter";
 import { Pagination } from "@/components/shared/Pagination";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { getCards, getEnrichedDailySummaries, getRawEmail } from "@/lib/api";
 import type { Card as CardType } from "@/types";
 import type { EnrichedDailySummary } from "@/lib/api";
-import { Mail, Eye } from "lucide-react";
 
 export default function Emails() {
   const [cards, setCards] = useState<CardType[]>([]);
@@ -47,82 +51,115 @@ export default function Emails() {
   ];
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold tracking-tight">邮件管理</h2>
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <Typography variant="h5" sx={{ fontWeight: 700 }}>邮件管理</Typography>
         <ChipFilter options={chipOptions} selected={selectedCards} onChange={setSelectedCards} />
-      </div>
+      </Box>
 
       {loading ? (
-        <div className="flex items-center justify-center h-64 text-muted-foreground">加载中...</div>
+        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", height: 256 }}>
+          <CircularProgress />
+        </Box>
       ) : summaries.length === 0 ? (
-        <div className="bg-card border rounded-xl py-12 text-center">
-          <Mail className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-          <h3 className="text-lg font-medium">还没有邮件</h3>
-          <p className="text-sm text-muted-foreground mt-1">通过 Gmail 同步或手动导入邮件后，这里会显示所有已拉取的邮件。</p>
-        </div>
+        <Card>
+          <CardContent sx={{ textAlign: "center", py: 6 }}>
+            <MailOutlined sx={{ fontSize: 48, color: "text.secondary", mb: 2 }} />
+            <Typography variant="h6" sx={{ fontWeight: 500 }}>还没有邮件</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              通过 Gmail 同步或手动导入邮件后，这里会显示所有已拉取的邮件。
+            </Typography>
+          </CardContent>
+        </Card>
       ) : (
         <>
-          <div className="border rounded-lg overflow-hidden">
-            <table className="w-full">
-              <thead>
-                <tr className="bg-muted border-b">
-                  <th className="text-left px-3 py-2 text-sm font-medium">邮件日期</th>
-                  <th className="text-left px-3 py-2 text-sm font-medium">卡片</th>
-                  <th className="text-right px-3 py-2 text-sm font-medium">交易笔数</th>
-                  <th className="text-right px-3 py-2 text-sm font-medium">消费金额</th>
-                  <th className="text-left px-3 py-2 text-sm font-medium">同步时间</th>
-                  <th className="text-center px-3 py-2 text-sm font-medium w-20">操作</th>
-                </tr>
-              </thead>
-              <tbody>
+          <TableContainer component={Paper} sx={{ borderRadius: 2, overflow: "hidden" }}>
+            <Table>
+              <TableHead>
+                <TableRow sx={{ backgroundColor: "action.hover" }}>
+                  <TableCell>邮件日期</TableCell>
+                  <TableCell>卡片</TableCell>
+                  <TableCell align="right">交易笔数</TableCell>
+                  <TableCell align="right">消费金额</TableCell>
+                  <TableCell>同步时间</TableCell>
+                  <TableCell align="center" sx={{ width: 80 }}>操作</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
                 {summaries.map((s) => (
-                  <tr key={s.id} className="border-b hover:bg-muted/50 transition-colors">
-                    <td className="px-3 py-2 text-sm font-medium">{s.email_date}</td>
-                    <td className="px-3 py-2 text-sm text-muted-foreground">尾号{s.card_last_four}</td>
-                    <td className="px-3 py-2 text-sm text-right">{s.transaction_count} 笔</td>
-                    <td className="px-3 py-2 text-sm text-right font-medium text-destructive">
+                  <TableRow
+                    key={s.id}
+                    sx={{ "&:hover": { backgroundColor: "action.hover" } }}
+                  >
+                    <TableCell sx={{ fontWeight: 500 }}>{s.email_date}</TableCell>
+                    <TableCell sx={{ color: "text.secondary" }}>尾号{s.card_last_four}</TableCell>
+                    <TableCell align="right">{s.transaction_count} 笔</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 500, color: "error.main" }}>
                       -¥{s.total_amount.toFixed(2)}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground">{s.fetched_at}</td>
-                    <td className="px-3 py-2 text-center">
-                      <Button variant="ghost" size="sm" onClick={() => handleViewHtml(s)}>
-                        <Eye className="h-3.5 w-3.5 mr-1" />查看
+                    </TableCell>
+                    <TableCell sx={{ fontSize: "0.75rem", color: "text.secondary" }}>{s.fetched_at}</TableCell>
+                    <TableCell align="center">
+                      <Button
+                        variant="text"
+                        size="small"
+                        startIcon={<Visibility />}
+                        onClick={() => handleViewHtml(s)}
+                      >
+                        查看
                       </Button>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </TableBody>
+            </Table>
+          </TableContainer>
 
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">共 {total} 封</span>
+          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <Typography variant="body2" color="text.secondary">共 {total} 封</Typography>
             <Pagination
               current={page} total={total} pageSize={pageSize}
               onPageChange={(p) => setPage(p)}
               onPageSizeChange={(s) => { setPageSize(s); setPage(1); }}
             />
-          </div>
+          </Box>
         </>
       )}
 
-      <Dialog open={selectedSummary !== null} onOpenChange={(open) => { if (!open) { setSelectedSummary(null); setRawHtml(null); } }}>
-        <DialogContent className="max-w-4xl max-h-[80vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle>邮件原文 - {selectedSummary?.email_date}</DialogTitle>
-          </DialogHeader>
-          <div className="flex-1 overflow-auto border rounded-md bg-muted/30">
+      <Dialog
+        open={selectedSummary !== null}
+        onClose={() => { setSelectedSummary(null); setRawHtml(null); }}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>邮件原文 - {selectedSummary?.email_date}</DialogTitle>
+        <DialogContent sx={{ maxHeight: "80vh", display: "flex", flexDirection: "column" }}>
+          <Box sx={{ flex: 1, overflow: "auto", borderRadius: 1, border: 1, borderColor: "divider", backgroundColor: "action.hover" }}>
             {htmlLoading ? (
-              <div className="flex items-center justify-center h-40 text-muted-foreground">加载中...</div>
+              <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", height: 160 }}>
+                <CircularProgress />
+              </Box>
             ) : rawHtml === null ? (
-              <div className="flex items-center justify-center h-40 text-muted-foreground">无法加载邮件内容</div>
+              <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", height: 160 }}>
+                <Typography color="text.secondary">无法加载邮件内容</Typography>
+              </Box>
             ) : (
-              <pre className="p-4 text-xs whitespace-pre-wrap font-mono max-h-[60vh] overflow-auto">{rawHtml}</pre>
+              <Box
+                component="pre"
+                sx={{
+                  p: 2,
+                  fontSize: "0.75rem",
+                  whiteSpace: "pre-wrap",
+                  fontFamily: "monospace",
+                  maxHeight: "60vh",
+                  overflow: "auto",
+                }}
+              >
+                {rawHtml}
+              </Box>
             )}
-          </div>
+          </Box>
         </DialogContent>
       </Dialog>
-    </div>
+    </Box>
   );
 }
