@@ -292,6 +292,27 @@ impl Database {
         Ok(cards)
     }
 
+    pub fn get_card(&self, id: i64) -> SqliteResult<Option<Card>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, last_four, bank, parser_profile, color, sync_method, sync_config, created_at FROM cards WHERE id = ?1"
+        )?;
+        let mut rows = stmt.query_map(params![id], |row| {
+            Ok(Card {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                last_four: row.get(2)?,
+                bank: row.get(3)?,
+                parser_profile: row.get(4)?,
+                color: row.get(5)?,
+                sync_method: row.get(6)?,
+                sync_config: row.get(7)?,
+                created_at: row.get(8)?,
+            })
+        })?;
+        Ok(rows.next().transpose()?)
+    }
+
     pub fn delete_card(&self, id: i64) -> SqliteResult<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM transactions WHERE card_id = ?1", params![id])?;

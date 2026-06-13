@@ -57,7 +57,8 @@ pub fn parse_email_html(html: &str, profile: &ParserProfile) -> ParseResult {
 }
 
 /// Returns a default CMB ParserProfile for backward compatibility
-pub fn default_cmb_profile() -> ParserProfile {
+#[allow(dead_code)]
+fn default_cmb_profile() -> ParserProfile {
     ParserProfile {
         id: 0,
         name: "招商银行每日信用管家".to_string(),

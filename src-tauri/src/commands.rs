@@ -1,10 +1,26 @@
 use crate::db::{Database, Card, Transaction, MonthlySummary, CategoryBreakdown, CreditTrend, DailySummary, PaginatedResult, SyncState, ParserProfile};
 use crate::gmail::{GmailConfig, GmailSyncResult};
-use crate::parser::{parse_email_html, default_cmb_profile, ParseResult};
+use crate::parser::{parse_email_html, ParseResult};
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 
 type GmailState = Arc<StdMutex<crate::gmail::GmailClient>>;
+
+fn default_cmb_profile() -> ParserProfile {
+    ParserProfile {
+        id: 1,
+        name: "招商银行每日信用管家".to_string(),
+        is_builtin: true,
+        sender_pattern: "ccsvc@message.cmbchina.com".to_string(),
+        subject_pattern: "每日信用管家".to_string(),
+        date_regex: r"\d{4}/\d{2}/\d{2}".to_string(),
+        time_regex: r"\d{2}:\d{2}:\d{2}".to_string(),
+        amount_regex: r"(?:CNY|RMB)\s*([\d,]+\.?\d*)".to_string(),
+        card_last_four_regex: r"尾号(\d+)".to_string(),
+        merchant_regex: r"尾号\d+\s*(?:消费|支出|还款)\s*(.+)".to_string(),
+        created_at: String::new(),
+    }
+}
 
 #[tauri::command]
 pub async fn get_cards(db: tauri::State<'_, Arc<Database>>) -> Result<Vec<Card>, String> {
@@ -52,7 +68,12 @@ pub async fn import_email(
 ) -> Result<String, String> {
     let db = db.inner().clone();
     tokio::task::spawn_blocking(move || {
-        let profile = default_cmb_profile();
+        // Look up card's parser_profile, fall back to default CMB
+        let profile = db.get_card(card_id)
+            .map_err(|e| e.to_string())?
+            .and_then(|card| db.get_parser_profile_by_name(&card.parser_profile).ok().flatten())
+            .unwrap_or_else(default_cmb_profile);
+
         let parsed = parse_email_html(&html_content, &profile);
 
         let email_date = parsed.email_date
@@ -333,6 +354,12 @@ fn sync_emails(
         return Err(msg.to_string());
     }
 
+    // Look up card's parser_profile once for all messages
+    let profile = db.get_card(card_id)
+        .map_err(|e| e.to_string())?
+        .and_then(|card| db.get_parser_profile_by_name(&card.parser_profile).ok().flatten())
+        .unwrap_or_else(default_cmb_profile);
+
     for msg in &messages {
         let html = match client.get_message_html(&msg.id) {
             Ok(h) => h,
@@ -342,7 +369,6 @@ fn sync_emails(
             }
         };
 
-        let profile = default_cmb_profile();
         let parsed = parse_email_html(&html, &profile);
 
         let email_date = match parsed.email_date {
