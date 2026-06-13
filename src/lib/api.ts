@@ -57,6 +57,7 @@ export async function getTransactions(params: {
   dateFrom?: string;
   dateTo?: string;
   category?: string;
+  paymentMethod?: string;
   merchant?: string;
   amountMin?: number;
   amountMax?: number;
@@ -68,6 +69,7 @@ export async function getTransactions(params: {
     dateFrom: params.dateFrom ?? null,
     dateTo: params.dateTo ?? null,
     category: params.category ?? null,
+    paymentMethod: params.paymentMethod ?? null,
     merchant: params.merchant ?? null,
     amountMin: params.amountMin ?? null,
     amountMax: params.amountMax ?? null,
