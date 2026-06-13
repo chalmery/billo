@@ -1,0 +1,653 @@
+use rusqlite::{Connection, Result as SqliteResult, params};
+use serde::{Deserialize, Serialize};
+use std::sync::Mutex;
+
+pub struct Database {
+    conn: Mutex<Connection>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Card {
+    pub id: i64,
+    pub name: String,
+    pub last_four: String,
+    pub bank: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[allow(dead_code)]
+pub struct DailySummary {
+    pub id: i64,
+    pub card_id: i64,
+    pub email_date: String,
+    pub available_credit: Option<f64>,
+    pub points_balance: Option<i64>,
+    pub email_uid: String,
+    pub fetched_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Transaction {
+    pub id: i64,
+    pub card_id: i64,
+    pub daily_summary_id: i64,
+    pub transaction_date: String,
+    pub transaction_time: Option<String>,
+    pub amount: f64,
+    pub currency: String,
+    pub merchant: String,
+    pub payment_method: Option<String>,
+    pub category: Option<String>,
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MonthlySummary {
+    pub month: String,
+    pub total: f64,
+    pub avg_daily: f64,
+    pub transaction_count: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CategoryBreakdown {
+    pub category: String,
+    pub total: f64,
+    pub count: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PaginatedResult<T: Serialize> {
+    pub items: Vec<T>,
+    pub total: i64,
+    pub page: i64,
+    pub page_size: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreditTrend {
+    pub date: String,
+    pub available_credit: f64,
+    pub total_consumption: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SyncState {
+    pub last_sync_at: Option<String>,
+}
+
+impl Database {
+    pub fn new(db_path: &str) -> SqliteResult<Self> {
+        let conn = Connection::open(db_path)?;
+        let db = Database {
+            conn: Mutex::new(conn),
+        };
+        db.init_tables()?;
+        Ok(db)
+    }
+
+    fn init_tables(&self) -> SqliteResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute_batch(
+            "
+            CREATE TABLE IF NOT EXISTS cards (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                last_four TEXT NOT NULL,
+                bank TEXT NOT NULL DEFAULT '招商银行',
+                created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            );
+
+            CREATE TABLE IF NOT EXISTS daily_summaries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                card_id INTEGER NOT NULL REFERENCES cards(id),
+                email_date TEXT NOT NULL,
+                available_credit REAL,
+                points_balance INTEGER,
+                email_uid TEXT UNIQUE,
+                raw_email TEXT,
+                fetched_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            );
+
+            CREATE TABLE IF NOT EXISTS transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                card_id INTEGER NOT NULL REFERENCES cards(id),
+                daily_summary_id INTEGER REFERENCES daily_summaries(id),
+                transaction_date TEXT NOT NULL,
+                transaction_time TEXT,
+                amount REAL NOT NULL,
+                currency TEXT NOT NULL DEFAULT 'CNY',
+                merchant TEXT NOT NULL,
+                payment_method TEXT,
+                category TEXT,
+                notes TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS sync_state (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                last_sync_at TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS category_rules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                pattern TEXT NOT NULL,
+                category TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            );
+
+            -- Default category rules
+            INSERT OR IGNORE INTO category_rules (pattern, category) VALUES
+                ('餐饮|咖啡|奶茶|外卖|食堂|餐厅|烘焙|饭店|美食', '餐饮'),
+                ('滴滴|地铁|公交|加油|停车|高速|打车|铁路|航空', '交通'),
+                ('淘宝|京东|拼多多|超市|百货|便利店|商场|天猫', '购物'),
+                ('游戏|影城|KTV|视频|音乐|直播|健身|运动', '娱乐'),
+                ('水电|燃气|物业|话费|宽带|供暖', '生活缴费'),
+                ('医院|药房|诊所|体检|医疗', '医疗健康'),
+                ('美团|饿了么|外卖', '外卖'),
+                ('瑞幸|星巴克|喜茶|奶茶|咖啡', '餐饮');
+
+            INSERT OR IGNORE INTO sync_state (id, last_sync_at) VALUES (1, NULL);
+            ",
+        )?;
+        Ok(())
+    }
+
+    // ===== Cards =====
+
+    pub fn create_card(&self, name: &str, last_four: &str) -> SqliteResult<Card> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO cards (name, last_four) VALUES (?1, ?2)",
+            params![name, last_four],
+        )?;
+        let id = conn.last_insert_rowid();
+        Ok(conn.query_row(
+            "SELECT id, name, last_four, bank, created_at FROM cards WHERE id = ?1",
+            params![id],
+            |row| {
+                Ok(Card {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    last_four: row.get(2)?,
+                    bank: row.get(3)?,
+                    created_at: row.get(4)?,
+                })
+            },
+        )?)
+    }
+
+    pub fn get_cards(&self) -> SqliteResult<Vec<Card>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, last_four, bank, created_at FROM cards ORDER BY created_at ASC",
+        )?;
+        let cards = stmt
+            .query_map([], |row| {
+                Ok(Card {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    last_four: row.get(2)?,
+                    bank: row.get(3)?,
+                    created_at: row.get(4)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(cards)
+    }
+
+    pub fn delete_card(&self, id: i64) -> SqliteResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM transactions WHERE card_id = ?1", params![id])?;
+        conn.execute("DELETE FROM daily_summaries WHERE card_id = ?1", params![id])?;
+        conn.execute("DELETE FROM cards WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    // ===== Daily Summaries =====
+
+    pub fn upsert_daily_summary(
+        &self,
+        card_id: i64,
+        email_date: &str,
+        available_credit: Option<f64>,
+        points_balance: Option<i64>,
+        email_uid: &str,
+        raw_email: Option<&str>,
+    ) -> SqliteResult<i64> {
+        let conn = self.conn.lock().unwrap();
+        // Try to find existing by email_uid
+        let existing: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM daily_summaries WHERE email_uid = ?1",
+                params![email_uid],
+                |row| row.get(0),
+            )
+            .ok();
+
+        if let Some(id) = existing {
+            // Update
+            conn.execute(
+                "UPDATE daily_summaries SET available_credit = ?1, points_balance = ?2 WHERE id = ?3",
+                params![available_credit, points_balance, id],
+            )?;
+            Ok(id)
+        } else {
+            conn.execute(
+                "INSERT INTO daily_summaries (card_id, email_date, available_credit, points_balance, email_uid, raw_email) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![card_id, email_date, available_credit, points_balance, email_uid, raw_email],
+            )?;
+            Ok(conn.last_insert_rowid())
+        }
+    }
+
+#[allow(dead_code)]
+    pub fn get_daily_summaries(
+        &self,
+        card_id: Option<i64>,
+        limit: i64,
+        offset: i64,
+    ) -> SqliteResult<PaginatedResult<DailySummary>> {
+        let conn = self.conn.lock().unwrap();
+        let (_where_clause, count_sql, query_sql) = if let Some(cid) = card_id {
+            (
+                format!("WHERE card_id = {}", cid),
+                format!("SELECT COUNT(*) FROM daily_summaries WHERE card_id = {}", cid),
+                format!("SELECT id, card_id, email_date, available_credit, points_balance, email_uid, fetched_at FROM daily_summaries WHERE card_id = {} ORDER BY email_date DESC LIMIT ?1 OFFSET ?2", cid),
+            )
+        } else {
+            (
+                "".to_string(),
+                "SELECT COUNT(*) FROM daily_summaries".to_string(),
+                "SELECT id, card_id, email_date, available_credit, points_balance, email_uid, fetched_at FROM daily_summaries ORDER BY email_date DESC LIMIT ?1 OFFSET ?2".to_string(),
+            )
+        };
+        let total: i64 = conn.query_row(&count_sql, [], |row| row.get(0))?;
+        let mut stmt = conn.prepare(&query_sql)?;
+        let items = stmt
+            .query_map(params![limit, offset], |row| {
+                Ok(DailySummary {
+                    id: row.get(0)?,
+                    card_id: row.get(1)?,
+                    email_date: row.get(2)?,
+                    available_credit: row.get(3)?,
+                    points_balance: row.get(4)?,
+                    email_uid: row.get(5)?,
+                    fetched_at: row.get(6)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(PaginatedResult {
+            items,
+            total,
+            page: offset / limit + 1,
+            page_size: limit,
+        })
+    }
+
+    pub fn get_raw_email(&self, summary_id: i64) -> SqliteResult<Option<String>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT raw_email FROM daily_summaries WHERE id = ?1"
+        )?;
+        let result = stmt.query_row(params![summary_id], |row| {
+            row.get::<_, Option<String>>(0)
+        });
+        match result {
+            Ok(html) => Ok(html),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    pub fn get_latest_summary_date(&self, card_id: i64) -> SqliteResult<Option<String>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT email_date FROM daily_summaries WHERE card_id = ?1 ORDER BY email_date DESC LIMIT 1"
+        )?;
+        let result = stmt.query_row(params![card_id], |row| row.get::<_, String>(0));
+        match result {
+            Ok(date) => Ok(Some(date)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    // ===== Transactions =====
+
+    pub fn insert_transaction(
+        &self,
+        card_id: i64,
+        daily_summary_id: i64,
+        transaction_date: &str,
+        transaction_time: Option<&str>,
+        amount: f64,
+        currency: &str,
+        merchant: &str,
+        payment_method: Option<&str>,
+    ) -> SqliteResult<i64> {
+        let category = self.classify_merchant(merchant);
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO transactions (card_id, daily_summary_id, transaction_date, transaction_time, amount, currency, merchant, payment_method, category) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![card_id, daily_summary_id, transaction_date, transaction_time, amount, currency, merchant, payment_method, category],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn get_transactions(
+        &self,
+        card_id: Option<i64>,
+        date_from: Option<&str>,
+        date_to: Option<&str>,
+        category: Option<&str>,
+        merchant: Option<&str>,
+        amount_min: Option<f64>,
+        amount_max: Option<f64>,
+        page: i64,
+        page_size: i64,
+    ) -> SqliteResult<PaginatedResult<Transaction>> {
+        let conn = self.conn.lock().unwrap();
+        let mut conditions: Vec<String> = Vec::new();
+        let mut _param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+        if let Some(cid) = card_id {
+            conditions.push(format!("t.card_id = {}", cid));
+        }
+        if let Some(d) = date_from {
+            conditions.push(format!("t.transaction_date >= '{}'", d));
+        }
+        if let Some(d) = date_to {
+            conditions.push(format!("t.transaction_date <= '{}'", d));
+        }
+        if let Some(c) = category {
+            conditions.push(format!("t.category = '{}'", c));
+        }
+        if let Some(m) = merchant {
+            conditions.push(format!("t.merchant LIKE '%{}%'", m.replace('\'', "''")));
+        }
+        if let Some(amin) = amount_min {
+            conditions.push(format!("t.amount >= {}", amin));
+        }
+        if let Some(amax) = amount_max {
+            conditions.push(format!("t.amount <= {}", amax));
+        }
+
+        let where_clause = if conditions.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE {}", conditions.join(" AND "))
+        };
+
+        let count_sql = format!("SELECT COUNT(*) FROM transactions t {}", where_clause);
+        let total: i64 = conn.query_row(&count_sql, [], |row| row.get(0))?;
+
+        let offset = (page - 1) * page_size;
+        let query_sql = format!(
+            "SELECT t.id, t.card_id, t.daily_summary_id, t.transaction_date, t.transaction_time, t.amount, t.currency, t.merchant, t.payment_method, t.category, t.notes FROM transactions t {} ORDER BY t.transaction_date DESC, t.transaction_time DESC LIMIT {} OFFSET {}",
+            where_clause, page_size, offset
+        );
+
+        let mut stmt = conn.prepare(&query_sql)?;
+        let items = stmt
+            .query_map([], |row| {
+                Ok(Transaction {
+                    id: row.get(0)?,
+                    card_id: row.get(1)?,
+                    daily_summary_id: row.get(2)?,
+                    transaction_date: row.get(3)?,
+                    transaction_time: row.get(4)?,
+                    amount: row.get(5)?,
+                    currency: row.get(6)?,
+                    merchant: row.get(7)?,
+                    payment_method: row.get(8)?,
+                    category: row.get(9)?,
+                    notes: row.get(10)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(PaginatedResult {
+            items,
+            total,
+            page,
+            page_size,
+        })
+    }
+
+    pub fn update_transaction_category(&self, id: i64, category: &str) -> SqliteResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE transactions SET category = ?1 WHERE id = ?2",
+            params![category, id],
+        )?;
+        Ok(())
+    }
+
+    // ===== Statistics =====
+
+    pub fn get_monthly_summary(
+        &self,
+        card_id: Option<i64>,
+        year: i32,
+    ) -> SqliteResult<Vec<MonthlySummary>> {
+        let conn = self.conn.lock().unwrap();
+        let card_filter = if let Some(cid) = card_id {
+            format!("AND card_id = {}", cid)
+        } else {
+            String::new()
+        };
+        let sql = format!(
+            "SELECT strftime('%Y-%m', transaction_date) as month,
+                    SUM(amount) as total,
+                    ROUND(SUM(amount) * 1.0 / COUNT(DISTINCT transaction_date), 2) as avg_daily,
+                    COUNT(*) as transaction_count
+             FROM transactions
+             WHERE strftime('%Y', transaction_date) = '{}' {}
+             GROUP BY month
+             ORDER BY month ASC",
+            year, card_filter
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let results = stmt
+            .query_map([], |row| {
+                Ok(MonthlySummary {
+                    month: row.get(0)?,
+                    total: row.get(1)?,
+                    avg_daily: row.get(2)?,
+                    transaction_count: row.get(3)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(results)
+    }
+
+    pub fn get_category_breakdown(
+        &self,
+        card_id: Option<i64>,
+        date_from: &str,
+        date_to: &str,
+    ) -> SqliteResult<Vec<CategoryBreakdown>> {
+        let conn = self.conn.lock().unwrap();
+        let card_filter = if let Some(cid) = card_id {
+            format!("AND card_id = {}", cid)
+        } else {
+            String::new()
+        };
+        let sql = format!(
+            "SELECT COALESCE(category, '未分类') as category,
+                    SUM(amount) as total,
+                    COUNT(*) as count
+             FROM transactions
+             WHERE transaction_date >= '{}' AND transaction_date <= '{}' {}
+             GROUP BY category
+             ORDER BY total DESC",
+            date_from, date_to, card_filter
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let results = stmt
+            .query_map([], |row| {
+                Ok(CategoryBreakdown {
+                    category: row.get(0)?,
+                    total: row.get(1)?,
+                    count: row.get(2)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(results)
+    }
+
+    pub fn get_credit_trend(
+        &self,
+        card_id: Option<i64>,
+        date_from: &str,
+        date_to: &str,
+    ) -> SqliteResult<Vec<CreditTrend>> {
+        let conn = self.conn.lock().unwrap();
+        let card_filter = if let Some(cid) = card_id {
+            format!("AND ds.card_id = {}", cid)
+        } else {
+            String::new()
+        };
+        let sql = format!(
+            "SELECT ds.email_date, ds.available_credit,
+                    COALESCE(t.daily_total, 0) as total_consumption
+             FROM daily_summaries ds
+             LEFT JOIN (
+                 SELECT daily_summary_id, SUM(amount) as daily_total
+                 FROM transactions
+                 GROUP BY daily_summary_id
+             ) t ON ds.id = t.daily_summary_id
+             WHERE ds.email_date >= '{}' AND ds.email_date <= '{}' {}
+             ORDER BY ds.email_date ASC",
+            date_from, date_to, card_filter
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let results = stmt
+            .query_map([], |row| {
+                Ok(CreditTrend {
+                    date: row.get(0)?,
+                    available_credit: row.get::<_, Option<f64>>(1)?.unwrap_or(0.0),
+                    total_consumption: row.get(2)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(results)
+    }
+
+    // ===== Sync State =====
+
+    pub fn get_sync_state(&self) -> SqliteResult<SyncState> {
+        let conn = self.conn.lock().unwrap();
+        let state = conn.query_row(
+            "SELECT last_sync_at FROM sync_state WHERE id = 1",
+            [],
+            |row| {
+                Ok(SyncState {
+                    last_sync_at: row.get(0)?,
+                })
+            },
+        )?;
+        Ok(state)
+    }
+
+    #[allow(dead_code)]
+pub fn update_sync_state(&self) -> SqliteResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE sync_state SET last_sync_at = datetime('now','localtime') WHERE id = 1",
+            [],
+        )?;
+        Ok(())
+    }
+
+    // ===== Merchant Classification =====
+
+    fn classify_merchant(&self, merchant: &str) -> Option<String> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare("SELECT pattern, category FROM category_rules")
+            .unwrap();
+        let rules: Vec<(String, String)> = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+        for (pattern, category) in rules {
+            let re = regex::Regex::new(&pattern).unwrap();
+            if re.is_match(merchant) {
+                return Some(category);
+            }
+        }
+        None
+    }
+
+    // ===== Export =====
+
+    pub fn export_csv(&self, path: &str, card_id: Option<i64>) -> Result<(), String> {
+        let mut wtr = csv::Writer::from_path(path).map_err(|e| e.to_string())?;
+        wtr.write_record(&[
+            "日期",
+            "时间",
+            "金额",
+            "币种",
+            "商户",
+            "支付方式",
+            "分类",
+            "备注",
+        ])
+        .map_err(|e| e.to_string())?;
+
+        let conn = self.conn.lock().unwrap();
+        let card_filter = if let Some(cid) = card_id {
+            format!("WHERE card_id = {}", cid)
+        } else {
+            String::new()
+        };
+        let sql = format!(
+            "SELECT transaction_date, transaction_time, amount, currency, merchant, payment_method, category, notes FROM transactions {} ORDER BY transaction_date DESC, transaction_time DESC",
+            card_filter
+        );
+        let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, f64>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                    row.get::<_, Option<String>>(6)?,
+                    row.get::<_, Option<String>>(7)?,
+                ))
+            })
+            .map_err(|e| e.to_string())?;
+
+        for row in rows {
+            let (date, time, amount, currency, merchant, payment, category, notes) =
+                row.map_err(|e| e.to_string())?;
+            wtr.write_record([
+                date,
+                time.unwrap_or_default(),
+                format!("{:.2}", amount),
+                currency,
+                merchant,
+                payment.unwrap_or_default(),
+                category.unwrap_or_default(),
+                notes.unwrap_or_default(),
+            ])
+            .map_err(|e| e.to_string())?;
+        }
+        wtr.flush().map_err(|e| e.to_string())?;
+        Ok(())
+    }
+}
