@@ -8,6 +8,7 @@ import type {
   CategoryBreakdown,
   CreditTrend,
   SyncStatus,
+  DashboardData,
 } from "@/types";
 
 // ===== Cards =====
@@ -101,6 +102,10 @@ export async function getCreditTrend(
   dateTo: string
 ): Promise<CreditTrend[]> {
   return invoke("get_credit_trend", { cardId, dateFrom, dateTo });
+}
+
+export async function getDashboardData(cardIds: number[], year: number): Promise<DashboardData> {
+  return invoke("get_dashboard_data", { cardIds, year });
 }
 
 // ===== Sync & Export =====

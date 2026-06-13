@@ -1,4 +1,4 @@
-use crate::db::{Database, Card, Transaction, MonthlySummary, CategoryBreakdown, CreditTrend, DailySummary, PaginatedResult, SyncState, ParserProfile};
+use crate::db::{Database, Card, Transaction, MonthlySummary, CategoryBreakdown, CreditTrend, DailySummary, PaginatedResult, SyncState, ParserProfile, DashboardData};
 use crate::gmail::{GmailConfig, GmailSyncResult};
 use crate::parser::{parse_email_html, ParseResult};
 use std::sync::Arc;
@@ -487,4 +487,18 @@ pub fn delete_parser_profile(
     id: i64,
 ) -> Result<(), String> {
     db.delete_parser_profile(id).map_err(|e| e.to_string())
+}
+
+// ===== Dashboard =====
+
+#[tauri::command]
+pub async fn get_dashboard_data(
+    db: tauri::State<'_, Arc<Database>>,
+    card_ids: Vec<i64>,
+    year: i32,
+) -> Result<DashboardData, String> {
+    let db = db.inner().clone();
+    tokio::task::spawn_blocking(move || {
+        db.get_dashboard_data(&card_ids, year).map_err(|e| e.to_string())
+    }).await.map_err(|e| e.to_string())?
 }

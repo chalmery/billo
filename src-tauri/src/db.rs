@@ -107,6 +107,26 @@ pub struct SyncState {
     pub last_sync_at: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DashboardData {
+    pub monthly_total: f64,
+    pub monthly_change_pct: Option<f64>,
+    pub yearly_total: f64,
+    pub yearly_change_pct: Option<f64>,
+    pub daily_average: f64,
+    pub transaction_count: i64,
+    pub max_single: f64,
+    pub max_single_merchant: String,
+    pub heatmap_data: std::collections::HashMap<String, HeatmapCell>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HeatmapCell {
+    pub amount: f64,
+    pub count: i64,
+    pub categories: Vec<String>,
+}
+
 impl Database {
     pub fn new(db_path: &str) -> SqliteResult<Self> {
         let conn = Connection::open(db_path)?;
@@ -853,5 +873,163 @@ impl Database {
             rusqlite::params![id],
         )?;
         Ok(())
+    }
+
+    // ===== Dashboard =====
+
+    pub fn get_dashboard_data(&self, card_ids: &[i64], year: i32) -> SqliteResult<DashboardData> {
+        use chrono::{Datelike, Local};
+        let conn = self.conn.lock().unwrap();
+
+        let today = Local::now();
+        let current_ym = today.format("%Y-%m").to_string();
+
+        // Previous month (handle January -> December of previous year)
+        let prev_ym = if today.month() == 1 {
+            format!("{}-12", today.year() - 1)
+        } else {
+            format!("{}-{:02}", today.year(), today.month() - 1)
+        };
+
+        let prev_year = year - 1;
+
+        // Card filter clause (empty = all cards)
+        let card_clause = if card_ids.is_empty() {
+            String::new()
+        } else {
+            let ids: Vec<String> = card_ids.iter().map(|id| id.to_string()).collect();
+            format!("AND card_id IN ({})", ids.join(","))
+        };
+
+        // Monthly total (current month)
+        let monthly_total: f64 = conn
+            .query_row(
+                &format!(
+                    "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE strftime('%Y-%m', transaction_date) = '{}' {}",
+                    current_ym, card_clause
+                ),
+                [],
+                |row| row.get(0),
+            )?;
+
+        // Previous month total (for month-over-month change)
+        let prev_month_total: f64 = conn
+            .query_row(
+                &format!(
+                    "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE strftime('%Y-%m', transaction_date) = '{}' {}",
+                    prev_ym, card_clause
+                ),
+                [],
+                |row| row.get(0),
+            )?;
+
+        let monthly_change_pct = if prev_month_total > 0.0 {
+            Some(((monthly_total - prev_month_total) / prev_month_total) * 100.0)
+        } else {
+            None
+        };
+
+        // Yearly total (given year)
+        let yearly_total: f64 = conn
+            .query_row(
+                &format!(
+                    "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE strftime('%Y', transaction_date) = '{}' {}",
+                    year, card_clause
+                ),
+                [],
+                |row| row.get(0),
+            )?;
+
+        // Previous year total (year-over-year)
+        let prev_year_total: f64 = conn
+            .query_row(
+                &format!(
+                    "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE strftime('%Y', transaction_date) = '{}' {}",
+                    prev_year, card_clause
+                ),
+                [],
+                |row| row.get(0),
+            )?;
+
+        let yearly_change_pct = if prev_year_total > 0.0 {
+            Some(((yearly_total - prev_year_total) / prev_year_total) * 100.0)
+        } else {
+            None
+        };
+
+        // Daily average: monthly total / days passed this month
+        let days_passed = today.day() as f64;
+        let daily_average = if days_passed > 0.0 {
+            monthly_total / days_passed
+        } else {
+            0.0
+        };
+
+        // Transaction count this month
+        let transaction_count: i64 = conn
+            .query_row(
+                &format!(
+                    "SELECT COUNT(*) FROM transactions WHERE strftime('%Y-%m', transaction_date) = '{}' {}",
+                    current_ym, card_clause
+                ),
+                [],
+                |row| row.get(0),
+            )?;
+
+        // Max single transaction this month
+        let (max_single, max_single_merchant): (f64, String) = conn
+            .query_row(
+                &format!(
+                    "SELECT amount, merchant FROM transactions WHERE strftime('%Y-%m', transaction_date) = '{}' {} ORDER BY amount DESC LIMIT 1",
+                    current_ym, card_clause
+                ),
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap_or((0.0, String::new()));
+
+        // Heatmap data: group by date for the given year
+        let mut heatmap_data: std::collections::HashMap<String, HeatmapCell> =
+            std::collections::HashMap::new();
+
+        let heatmap_sql = format!(
+            "SELECT transaction_date, SUM(amount) as total, COUNT(*) as cnt,
+                    GROUP_CONCAT(DISTINCT COALESCE(category, '未分类')) as cats
+             FROM transactions
+             WHERE strftime('%Y', transaction_date) = '{}' {}
+             GROUP BY transaction_date
+             ORDER BY transaction_date",
+            year, card_clause
+        );
+
+        let mut stmt = conn.prepare(&heatmap_sql)?;
+        let rows = stmt.query_map([], |row| {
+            let date: String = row.get(0)?;
+            let amount: f64 = row.get(1)?;
+            let count: i64 = row.get(2)?;
+            let cats_str: String = row.get(3)?;
+            let categories: Vec<String> = cats_str
+                .split(',')
+                .map(|s| s.to_string())
+                .collect();
+            Ok((date, HeatmapCell { amount, count, categories }))
+        })?;
+
+        for row in rows {
+            let (date, cell) = row?;
+            heatmap_data.insert(date, cell);
+        }
+
+        Ok(DashboardData {
+            monthly_total,
+            monthly_change_pct,
+            yearly_total,
+            yearly_change_pct,
+            daily_average,
+            transaction_count,
+            max_single,
+            max_single_merchant,
+            heatmap_data,
+        })
     }
 }

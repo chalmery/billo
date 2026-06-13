@@ -1,179 +1,93 @@
-import { useEffect, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  getCards,
-  getTransactions,
-  getMonthlySummary,
-  getCategoryBreakdown,
-  getSyncState,
-} from "@/lib/api";
-import type { Card as CardType, MonthlySummary, CategoryBreakdown, SyncStatus } from "@/types";
-import { TrendingUp, CreditCard, Flame, Star } from "lucide-react";
+import { useState, useEffect } from 'react';
+import { ChipFilter } from '@/components/shared/ChipFilter';
+import { Heatmap } from '@/components/shared/Heatmap';
+import { getDashboardData, getCards } from '@/lib/api';
+import type { Card, DashboardData } from '@/types';
 
 export default function Dashboard() {
-  const [cards, setCards] = useState<CardType[]>([]);
-  const [monthlyTotal, setMonthlyTotal] = useState<number>(0);
-  const [todayTotal, setTodayTotal] = useState<number>(0);
-  const [categories, setCategories] = useState<CategoryBreakdown[]>([]);
-  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [cards, setCards] = useState<Card[]>([]);
+  const [selectedCards, setSelectedCards] = useState<string[]>(['all']);
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [year, setYear] = useState(new Date().getFullYear());
 
+  // Fetch cards on mount
   useEffect(() => {
-    async function load() {
-      try {
-        const [cardList, summary, catBreakdown, state] = await Promise.all([
-          getCards(),
-          getMonthlySummary(null, new Date().getFullYear()),
-          getCategoryBreakdown(null, getMonthStart(), getMonthEnd()),
-          getSyncState(),
-        ]);
-        setCards(cardList);
-        setSyncStatus(state);
-
-        // Current month total
-        const currentMonth = new Date().toISOString().slice(0, 7);
-        const currentMonthData = summary.find((s: MonthlySummary) => s.month === currentMonth);
-        setMonthlyTotal(currentMonthData?.total ?? 0);
-
-        // Today's transactions
-        const today = new Date().toISOString().slice(0, 10);
-        const todayTx = await getTransactions({ dateFrom: today, dateTo: today, pageSize: 100 });
-        const todaySum = todayTx.items.reduce((acc, t) => acc + t.amount, 0);
-        setTodayTotal(todaySum);
-
-        setCategories(catBreakdown.slice(0, 5));
-      } catch (e) {
-        console.error("Failed to load dashboard data:", e);
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
+    getCards().then(setCards);
   }, []);
 
-  function getMonthStart(): string {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-  }
+  // Fetch data when filters change
+  useEffect(() => {
+    const ids = selectedCards.includes('all') ? [] : selectedCards.map(Number);
+    getDashboardData(ids, year).then(setData);
+  }, [selectedCards, year]);
 
-  function getMonthEnd(): string {
-    const now = new Date();
-    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${lastDay}`;
-  }
+  const chipOptions = [
+    { key: 'all', label: '全部' },
+    ...cards.map(c => ({ key: String(c.id), label: c.name, sublabel: c.last_four })),
+  ];
 
-  if (loading) {
-    return <div className="flex items-center justify-center h-64 text-muted-foreground">加载中...</div>;
-  }
-
-  const topCategory = categories[0];
+  const heatmapThresholds = [10, 30, 50, 200];
+  const heatmapColors = ['#ebedf0', '#9be9a8', '#40c463', '#30a14e', '#216e39'];
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold tracking-tight">账单概览</h2>
-        {syncStatus?.last_sync_at && (
-          <p className="text-xs text-muted-foreground">
-            上次同步: {syncStatus.last_sync_at}
-          </p>
-        )}
+    <div>
+      {/* KPI Cards */}
+      <div className="grid grid-cols-5 gap-4 mb-6">
+        <KpiCard title="本月消费" value={`¥${data?.monthly_total.toLocaleString() ?? '---'}`}
+          change={data?.monthly_change_pct} />
+        <KpiCard title="本年消费" value={`¥${data?.yearly_total.toLocaleString() ?? '---'}`}
+          change={data?.yearly_change_pct} />
+        <KpiCard title="日均消费" value={data ? `¥${Math.round(data.daily_average)}` : '---'} />
+        <KpiCard title="消费笔数" value={data ? `${data.transaction_count} 笔` : '---'} />
+        <KpiCard title="最大单笔" value={data ? `¥${data.max_single.toLocaleString()}` : '---'}
+          sub={data?.max_single_merchant} />
       </div>
 
-      {cards.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <CreditCard className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium">还没有卡片</h3>
-            <p className="text-sm text-muted-foreground mt-1">
-              请先在「卡片管理」中添加信用卡，然后导入账单邮件。
-            </p>
-          </CardContent>
-        </Card>
-      ) : (
-        <>
-          {/* Summary Cards */}
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">本月消费</CardTitle>
-                <TrendingUp className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">¥{monthlyTotal.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}</div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">今日消费</CardTitle>
-                <Flame className="h-4 w-4 text-orange-500" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">¥{todayTotal.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}</div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">消费最多的类别</CardTitle>
-                <Star className="h-4 w-4 text-yellow-500" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {topCategory ? topCategory.category : "暂无数据"}
-                </div>
-                {topCategory && (
-                  <p className="text-xs text-muted-foreground">
-                    ¥{topCategory.total.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">已关联卡片</CardTitle>
-                <CreditCard className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{cards.length}</div>
-              </CardContent>
-            </Card>
+      {/* Heatmap */}
+      <div className="bg-card border rounded-xl p-5 mb-4">
+        <div className="flex justify-end mb-2">
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <span>少</span>
+            <div className="w-3 h-3 rounded-sm" style={{backgroundColor: heatmapColors[0]}} />
+            <div className="w-3 h-3 rounded-sm" style={{backgroundColor: heatmapColors[1]}} />
+            <div className="w-3 h-3 rounded-sm" style={{backgroundColor: heatmapColors[2]}} />
+            <div className="w-3 h-3 rounded-sm" style={{backgroundColor: heatmapColors[3]}} />
+            <div className="w-3 h-3 rounded-sm" style={{backgroundColor: heatmapColors[4]}} />
+            <span>多</span>
           </div>
+        </div>
+        {data && (
+          <Heatmap
+            data={data.heatmap_data}
+            year={year}
+            availableYears={[2026, 2025, 2024, 2023].filter(y => y <= new Date().getFullYear())}
+            onYearChange={setYear}
+            thresholds={heatmapThresholds}
+            colors={heatmapColors}
+          />
+        )}
+        <div className="flex justify-between mt-3">
+          <span className="text-xs text-muted-foreground">上次同步：...</span>
+          <ChipFilter options={chipOptions} selected={selectedCards} onChange={setSelectedCards} />
+        </div>
+      </div>
+    </div>
+  );
+}
 
-          {/* Category Breakdown */}
-          {categories.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>消费类别排行 (本月)</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {categories.map((cat) => {
-                    const maxTotal = categories[0].total;
-                    const widthPct = maxTotal > 0 ? (cat.total / maxTotal) * 100 : 0;
-                    return (
-                      <div key={cat.category} className="flex items-center gap-3">
-                        <div className="w-20 text-sm font-medium truncate">{cat.category}</div>
-                        <div className="flex-1 h-4 bg-muted rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-primary rounded-full transition-all"
-                            style={{ width: `${widthPct}%` }}
-                          />
-                        </div>
-                        <div className="w-28 text-sm text-right">
-                          ¥{cat.total.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}
-                          <span className="text-muted-foreground ml-1">({cat.count}笔)</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </>
+function KpiCard({ title, value, change, sub }: {
+  title: string; value: string; change?: number | null; sub?: string;
+}) {
+  return (
+    <div className="bg-card border rounded-xl p-4">
+      <div className="text-sm text-muted-foreground mb-1">{title}</div>
+      <div className="text-2xl font-bold text-foreground">{value}</div>
+      {change != null && (
+        <div className={`text-xs mt-1 ${change >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+          {change >= 0 ? '↑' : '↓'} {Math.abs(change).toFixed(1)}% 较上月
+        </div>
       )}
+      {sub && <div className="text-xs text-muted-foreground mt-1 truncate">{sub}</div>}
     </div>
   );
 }

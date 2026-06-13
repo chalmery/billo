@@ -109,6 +109,25 @@ export interface AppConfig {
   auto_sync_enabled: boolean
 }
 
+// --- Dashboard ---
+export interface DashboardData {
+  monthly_total: number
+  monthly_change_pct: number | null
+  yearly_total: number
+  yearly_change_pct: number | null
+  daily_average: number
+  transaction_count: number
+  max_single: number
+  max_single_merchant: string
+  heatmap_data: Record<string, HeatmapCell>
+}
+
+export interface HeatmapCell {
+  amount: number
+  count: number
+  categories: string[]
+}
+
 // --- Common ---
 export interface ApiResponse<T> {
   success: boolean

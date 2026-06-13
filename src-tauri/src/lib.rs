@@ -61,6 +61,7 @@ pub fn run() {
             commands::create_parser_profile,
             commands::update_parser_profile,
             commands::delete_parser_profile,
+            commands::get_dashboard_data,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
