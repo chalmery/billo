@@ -1,3 +1,5 @@
+import { Box, Button } from "@mui/material";
+
 interface HeatmapDataPoint {
   amount: number;
   count: number;
@@ -63,32 +65,32 @@ export function Heatmap({ data, year, availableYears, onYearChange, thresholds, 
   const gap = 3;
 
   return (
-    <div className="flex gap-4">
-      <div>
-        <div className="flex mb-1" style={{ paddingLeft: '28px' }}>
+    <Box sx={{ display: "flex", gap: 2 }}>
+      <Box>
+        <Box sx={{ display: "flex", mb: 0.25, pl: "28px" }}>
           {weeks.map((week, ci) => {
             const firstDate = week.find(d => d !== null);
             const month = firstDate?.getMonth();
             const prevFirstDate = ci > 0 ? weeks[ci - 1].find(d => d !== null) : null;
             const prevMonth = prevFirstDate?.getMonth();
             return (
-              <div key={ci} style={{ width: `${cellSize + gap}px` }} className="text-xs text-muted-foreground overflow-visible whitespace-nowrap">
+              <Box key={ci} sx={{ width: cellSize + gap, fontSize: "0.7rem", color: "text.secondary", overflow: "visible", whiteSpace: "nowrap" }}>
                 {month !== undefined && month !== prevMonth ? MONTH_NAMES[month] : ''}
-              </div>
+              </Box>
             );
           })}
-        </div>
-        <div className="flex">
-          <div className="flex flex-col mr-1" style={{ gap: `${gap}px`, width: '24px' }}>
+        </Box>
+        <Box sx={{ display: "flex" }}>
+          <Box sx={{ display: "flex", flexDirection: "column", mr: 0.5, gap: `${gap}px`, width: 24 }}>
             {DAY_LABELS.map((label, i) => (
-              <div key={i} style={{ height: `${cellSize}px` }} className="flex items-center text-xs text-muted-foreground">
+              <Box key={i} sx={{ height: cellSize, display: "flex", alignItems: "center", fontSize: "0.7rem", color: "text.secondary" }}>
                 {label ?? ''}
-              </div>
+              </Box>
             ))}
-          </div>
-          <div className="flex" style={{ gap: `${gap}px` }}>
+          </Box>
+          <Box sx={{ display: "flex", gap: `${gap}px` }}>
             {weeks.map((week, wi) => (
-              <div key={wi} className="flex flex-col" style={{ gap: `${gap}px` }}>
+              <Box key={wi} sx={{ display: "flex", flexDirection: "column", gap: `${gap}px` }}>
                 {week.map((date, di) => {
                   const key = date ? formatDate(date) : '';
                   const dp = date && key ? data[key] : null;
@@ -100,24 +102,37 @@ export function Heatmap({ data, year, availableYears, onYearChange, thresholds, 
                     : date && !isFuture ? `${key}: 无数据`
                     : date ? key : '';
                   return (
-                    <div key={di} style={{ width: `${cellSize}px`, height: `${cellSize}px`, backgroundColor: bg, borderRadius: '2px' }} title={title} />
+                    <Box key={di} sx={{ width: cellSize, height: cellSize, backgroundColor: bg, borderRadius: "2px" }} title={title} />
                   );
                 })}
-              </div>
+              </Box>
             ))}
-          </div>
-        </div>
-      </div>
-      <div className="flex flex-col gap-1">
+          </Box>
+        </Box>
+      </Box>
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
         {sortedYears.map(y => (
-          <button
+          <Button
             key={y}
             onClick={() => onYearChange(y)}
-            className={`text-sm px-2 py-0.5 rounded text-left ${y === year ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}>
+            size="small"
+            sx={{
+              px: 1,
+              py: 0,
+              minWidth: 0,
+              justifyContent: "flex-start",
+              fontSize: "0.8rem",
+              borderRadius: 0.5,
+              textTransform: "none",
+              color: y === year ? "primary.contrastText" : "text.secondary",
+              bgcolor: y === year ? "primary.main" : "transparent",
+              "&:hover": { bgcolor: y === year ? "primary.dark" : "action.hover" },
+            }}
+          >
             {y}
-          </button>
+          </Button>
         ))}
-      </div>
-    </div>
+      </Box>
+    </Box>
   );
 }
