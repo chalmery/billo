@@ -287,3 +287,35 @@ export async function updateCategoryRule(id: number, pattern: string, category: 
 export async function deleteCategoryRule(id: number): Promise<void> {
   return invoke("delete_category_rule", { id });
 }
+
+// ===== Parser Profiles =====
+
+export interface ParserProfile {
+  id: number;
+  name: string;
+  is_builtin: boolean;
+  sender_pattern: string;
+  subject_pattern: string;
+  date_regex: string;
+  time_regex: string;
+  amount_regex: string;
+  card_last_four_regex: string;
+  merchant_regex: string;
+  created_at: string;
+}
+
+export async function getParserProfiles(): Promise<ParserProfile[]> {
+  return invoke("get_parser_profiles");
+}
+
+export async function createParserProfile(profile: Omit<ParserProfile, "id" | "created_at">): Promise<number> {
+  return invoke("create_parser_profile", { profile });
+}
+
+export async function updateParserProfile(profile: ParserProfile): Promise<void> {
+  return invoke("update_parser_profile", { profile });
+}
+
+export async function deleteParserProfile(id: number): Promise<void> {
+  return invoke("delete_parser_profile", { id });
+}

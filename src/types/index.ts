@@ -100,6 +100,21 @@ export interface SyncStatus {
   message: string
 }
 
+// --- Parser Profile ---
+export interface ParserProfile {
+  id: number
+  name: string
+  is_builtin: boolean
+  sender_pattern: string
+  subject_pattern: string
+  date_regex: string
+  time_regex: string
+  amount_regex: string
+  card_last_four_regex: string
+  merchant_regex: string
+  created_at: string
+}
+
 export interface SyncResult {
   success: boolean
   new_summaries: number
