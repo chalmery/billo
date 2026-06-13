@@ -12,6 +12,36 @@ pub struct Card {
     pub name: String,
     pub last_four: String,
     pub bank: String,
+    pub parser_profile: String,
+    pub color: String,
+    pub sync_method: Option<String>,
+    pub sync_config: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParserProfile {
+    pub id: i64,
+    pub name: String,
+    pub is_builtin: bool,
+    pub sender_pattern: String,
+    pub subject_pattern: String,
+    pub date_regex: String,
+    pub time_regex: String,
+    pub amount_regex: String,
+    pub card_last_four_regex: String,
+    pub merchant_regex: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncLog {
+    pub id: i64,
+    pub card_id: i64,
+    pub status: String,
+    pub new_emails: i64,
+    pub new_transactions: i64,
+    pub message: Option<String>,
     pub created_at: String,
 }
 
@@ -150,6 +180,63 @@ impl Database {
             INSERT OR IGNORE INTO sync_state (id, last_sync_at) VALUES (1, NULL);
             ",
         )?;
+
+        // ALTER TABLE for new cards columns (SQLite doesn't support ADD COLUMN IF NOT EXISTS,
+        // so we ignore errors if columns already exist)
+        let _ = conn.execute(
+            "ALTER TABLE cards ADD COLUMN parser_profile TEXT NOT NULL DEFAULT 'cmb'",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE cards ADD COLUMN color TEXT NOT NULL DEFAULT 'slate'",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE cards ADD COLUMN sync_method TEXT",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE cards ADD COLUMN sync_config TEXT",
+            [],
+        );
+
+        conn.execute_batch(
+            "
+            CREATE TABLE IF NOT EXISTS parser_profiles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                is_builtin INTEGER NOT NULL DEFAULT 0,
+                sender_pattern TEXT NOT NULL DEFAULT '',
+                subject_pattern TEXT NOT NULL DEFAULT '',
+                date_regex TEXT NOT NULL DEFAULT '',
+                time_regex TEXT NOT NULL DEFAULT '',
+                amount_regex TEXT NOT NULL DEFAULT '',
+                card_last_four_regex TEXT NOT NULL DEFAULT '',
+                merchant_regex TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            );
+
+            INSERT OR IGNORE INTO parser_profiles (id, name, is_builtin, sender_pattern, subject_pattern,
+                date_regex, time_regex, amount_regex, card_last_four_regex, merchant_regex)
+            VALUES (1, '招商银行每日信用管家', 1, 'ccsvc@message.cmbchina.com', '每日信用管家',
+                '\\d{4}/\\d{2}/\\d{2}',
+                '\\d{2}:\\d{2}:\\d{2}',
+                '(?:CNY|RMB)\\s*([\\d,]+\\.?\\d*)',
+                '尾号(\\d+)',
+                '尾号\\d+\\s*(?:消费|支出|还款)\\s*(.+)'
+            );
+
+            CREATE TABLE IF NOT EXISTS sync_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                card_id INTEGER NOT NULL REFERENCES cards(id),
+                status TEXT NOT NULL,
+                new_emails INTEGER NOT NULL DEFAULT 0,
+                new_transactions INTEGER NOT NULL DEFAULT 0,
+                message TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            );
+            ",
+        )?;
         Ok(())
     }
 
@@ -163,7 +250,7 @@ impl Database {
         )?;
         let id = conn.last_insert_rowid();
         Ok(conn.query_row(
-            "SELECT id, name, last_four, bank, created_at FROM cards WHERE id = ?1",
+            "SELECT id, name, last_four, bank, parser_profile, color, sync_method, sync_config, created_at FROM cards WHERE id = ?1",
             params![id],
             |row| {
                 Ok(Card {
@@ -171,7 +258,11 @@ impl Database {
                     name: row.get(1)?,
                     last_four: row.get(2)?,
                     bank: row.get(3)?,
-                    created_at: row.get(4)?,
+                    parser_profile: row.get(4)?,
+                    color: row.get(5)?,
+                    sync_method: row.get(6)?,
+                    sync_config: row.get(7)?,
+                    created_at: row.get(8)?,
                 })
             },
         )?)
@@ -180,7 +271,7 @@ impl Database {
     pub fn get_cards(&self) -> SqliteResult<Vec<Card>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, name, last_four, bank, created_at FROM cards ORDER BY created_at ASC",
+            "SELECT id, name, last_four, bank, parser_profile, color, sync_method, sync_config, created_at FROM cards ORDER BY created_at ASC",
         )?;
         let cards = stmt
             .query_map([], |row| {
@@ -189,7 +280,11 @@ impl Database {
                     name: row.get(1)?,
                     last_four: row.get(2)?,
                     bank: row.get(3)?,
-                    created_at: row.get(4)?,
+                    parser_profile: row.get(4)?,
+                    color: row.get(5)?,
+                    sync_method: row.get(6)?,
+                    sync_config: row.get(7)?,
+                    created_at: row.get(8)?,
                 })
             })?
             .filter_map(|r| r.ok())
