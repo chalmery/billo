@@ -62,6 +62,15 @@ pub fn run() {
             commands::update_parser_profile,
             commands::delete_parser_profile,
             commands::get_dashboard_data,
+            commands::get_yearly_totals,
+            commands::get_payment_method_breakdown,
+            commands::get_card_detail,
+            commands::update_card,
+            commands::get_enriched_daily_summaries,
+            commands::get_category_rules,
+            commands::add_category_rule,
+            commands::update_category_rule,
+            commands::delete_category_rule,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
