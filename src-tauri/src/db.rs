@@ -282,9 +282,9 @@ impl Database {
             VALUES (1, '招商银行每日信用管家', 1, 'ccsvc@message.cmbchina.com', '每日信用管家',
                 '\\d{4}/\\d{2}/\\d{2}',
                 '\\d{2}:\\d{2}:\\d{2}',
-                '(?:CNY|RMB)\\s*([\\d,]+\\.?\\d*)',
+                '(?:CNY|RMB)\\s*(-?[\\d,]+\\.?\\d*)',
                 '尾号(\\d+)',
-                '尾号\\d+\\s*(?:消费|支出|还款)\\s*(.+)'
+                '尾号\\d+\\s*(?:消费|支出|还款|退货)\\s*(.+)'
             );
 
             CREATE TABLE IF NOT EXISTS sync_logs (
@@ -477,6 +477,16 @@ impl Database {
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(e),
         }
+    }
+
+    pub fn email_uid_exists(&self, email_uid: &str) -> SqliteResult<bool> {
+        let conn = self.conn.lock().unwrap();
+        let exists: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM daily_summaries WHERE email_uid = ?1",
+            params![email_uid],
+            |row| row.get(0),
+        )?;
+        Ok(exists > 0)
     }
 
     pub fn get_latest_summary_date(&self, card_id: i64) -> SqliteResult<Option<String>> {

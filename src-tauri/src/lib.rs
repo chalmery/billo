@@ -10,10 +10,6 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    if std::env::var("XDG_SESSION_TYPE").unwrap_or_default() != "wayland" {
-        std::env::set_var("GTK_CSD", "0");
-    }
-
     env_logger::init();
 
     tauri::Builder::default()

@@ -1,6 +1,8 @@
-use log::{error, info};
+use chrono::Datelike;
+use log::info;
 use reqwest::blocking::Client as HttpClient;
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -29,14 +31,15 @@ pub struct GmailSyncResult {
     pub success: bool,
     pub new_summaries: i64,
     pub new_transactions: i64,
+    pub total_found: i64,
+    pub total_skipped: i64,
     pub errors: Vec<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct GmailMessageSnippet {
-    pub id: String,
-    pub subject: String,
-    pub date: String,
+#[derive(Debug, Clone)]
+pub struct MessageContent {
+    pub html: String,
+    pub internal_date: Option<String>,
 }
 
 pub struct GmailClient {
@@ -211,75 +214,114 @@ pub fn is_configured(&self) -> bool {
         Ok(access_token)
     }
 
-    pub fn list_cmb_messages(&self, since_date: Option<&str>) -> Result<Vec<GmailMessageSnippet>, String> {
+    /// List CMB messages using time-range segmentation to bypass Gmail API's
+    /// ~500 result limit on `q` parameter searches.
+    ///
+    /// The query is split into half-year windows so each segment returns <500
+    /// results, and all segments are merged with deduplication.
+    pub fn list_cmb_messages(&self, since_date: Option<&str>) -> Result<Vec<String>, String> {
         let access_token = self.get_access_token()?;
 
-        let mut query = format!("from:{}", "ccsvc@message.cmbchina.com");
-        if let Some(date) = since_date {
-            query.push_str(&format!(" after:{}", date.replace('-', "/")));
-        }
-        let mut all_snippets: Vec<GmailMessageSnippet> = Vec::new();
-        let mut page_token: Option<String> = None;
+        // Build base query: from CMB + subject filter
+        let base_query = format!(
+            "from:{} subject:{}",
+            "ccsvc@message.cmbchina.com",
+            "每日信用管家"
+        );
 
-        loop {
-            let mut url = format!(
-                "https://gmail.googleapis.com/gmail/v1/users/me/messages?q={}&maxResults=100",
-                urlencoding_encode(&query),
+        // Determine date range for segmentation
+let start_date = since_date
+            .map(|d| d.replace('-', "/"))
+            .unwrap_or_else(|| "2015/01/01".to_string());
+
+        // Use local time +1 day so `before:` includes today's emails
+        // (Gmail's before:date is exclusive; to include today we need tomorrow)
+        let tomorrow = chrono::Local::now().date_naive() + chrono::TimeDelta::days(1);
+        let end_date = format!(
+            "{}/{:02}/{:02}",
+            tomorrow.year() + (tomorrow.month() == 12 && tomorrow.day() == 31) as i32,
+            tomorrow.month() as u32,
+            tomorrow.day() as u32
+        );
+
+        // Generate half-year time segments to keep each query under 500 results
+        let segments = generate_time_segments(&start_date, &end_date);
+
+        let mut all_ids: Vec<String> = Vec::new();
+        let mut seen_ids: HashSet<String> = HashSet::new();
+
+        for segment in &segments {
+            let query = format!(
+                "{} after:{} before:{}",
+                base_query, segment.start, segment.end
             );
-            if let Some(ref token) = page_token {
-                url.push_str(&format!("&pageToken={}", token));
-            }
+            info!("Gmail list segment query: {}", query);
 
-            info!("Gmail list request: {}", url);
+            let mut page_token: Option<String> = None;
 
-            let response = self.http
-                .get(&url)
-                .bearer_auth(&access_token)
-                .send()
-                .map_err(|e| format!("Gmail API request failed: {}", e))?;
+            loop {
+                let mut url = format!(
+                    "https://gmail.googleapis.com/gmail/v1/users/me/messages?q={}&maxResults=500",
+                    urlencoding_encode(&query),
+                );
+                if let Some(ref token) = page_token {
+                    url.push_str(&format!("&pageToken={}", token));
+                }
 
-            if !response.status().is_success() {
-                let status = response.status();
-                let body = response.text().unwrap_or_default();
-                return Err(format!("Gmail API error {}: {}", status, body));
-            }
+                let response = self.http
+                    .get(&url)
+                    .bearer_auth(&access_token)
+                    .send()
+                    .map_err(|e| format!("Gmail API request failed: {}", e))?;
 
-            #[derive(Deserialize)]
-            struct ListResponse {
-                messages: Option<Vec<MessageId>>,
-                #[serde(default)]
-                next_page_token: Option<String>,
-            }
-            #[derive(Deserialize)]
-            struct MessageId {
-                id: String,
-            }
-
-            let list_resp: ListResponse = response.json().map_err(|e| format!("Parse Gmail list: {}", e))?;
-            let messages = list_resp.messages.unwrap_or_default();
-            info!("Gmail list page returned {} messages", messages.len());
-
-            for msg in &messages {
-                match self.get_message_snippet(&access_token, &msg.id) {
-                    Ok(s) => {
-                        info!("Gmail message: id={}, subject={}", s.id, s.subject);
-                        all_snippets.push(s);
+                if !response.status().is_success() {
+                    let status = response.status();
+                    let body = response.text().unwrap_or_default();
+                    // Treat 4xx as "no results for this segment", continue to next
+                    if status.as_u16() >= 400 && status.as_u16() < 500 {
+                        info!("Gmail segment {} - {} returned {}, skipping", segment.start, segment.end, status);
+                        break;
                     }
-                    Err(e) => error!("Failed to get message {}: {}", msg.id, e),
+                    return Err(format!("Gmail API error {}: {}", status, body));
+                }
+
+                #[derive(Deserialize)]
+                struct ListResponse {
+                    messages: Option<Vec<MessageId>>,
+                    #[serde(default)]
+                    next_page_token: Option<String>,
+                }
+                #[derive(Deserialize)]
+                struct MessageId {
+                    id: String,
+                }
+
+                let list_resp: ListResponse = response.json().map_err(|e| format!("Parse Gmail list: {}", e))?;
+                let messages = list_resp.messages.unwrap_or_default();
+                let mut segment_count = 0;
+
+                for msg in &messages {
+                    if seen_ids.insert(msg.id.clone()) {
+                        all_ids.push(msg.id.clone());
+                        segment_count += 1;
+                    }
+                }
+
+                info!("Gmail segment {} - {}: {} new messages (page had {})", segment.start, segment.end, segment_count, messages.len());
+
+                match list_resp.next_page_token {
+                    Some(token) => page_token = Some(token),
+                    None => break,
                 }
             }
-
-            match list_resp.next_page_token {
-                Some(token) => page_token = Some(token),
-                None => break,
-            }
         }
 
-        info!("Gmail total CMB messages found: {}", all_snippets.len());
-        Ok(all_snippets)
+        info!("Gmail total CMB messages found across all segments: {}", all_ids.len());
+        Ok(all_ids)
     }
 
-    pub fn get_message_html(&self, message_id: &str) -> Result<String, String> {
+    /// Fetch a single message's HTML content and internal date by ID.
+    pub fn get_message(&self, message_id: &str) -> Result<MessageContent, String> {
         let access_token = self.get_access_token()?;
         let url = format!("https://gmail.googleapis.com/gmail/v1/users/me/messages/{}?format=full", message_id);
 
@@ -294,36 +336,88 @@ pub fn is_configured(&self) -> bool {
         }
 
         let full_msg: serde_json::Value = response.json().map_err(|e| format!("Parse error: {}", e))?;
-        extract_html_from_message(&full_msg)
+
+        let internal_date = full_msg.get("internalDate")
+            .and_then(|v| v.as_i64())
+            .and_then(|ms| chrono::DateTime::from_timestamp_millis(ms))
+            .map(|dt| dt.format("%Y-%m-%d").to_string());
+
+        let html = extract_html_from_message(&full_msg)?;
+        Ok(MessageContent { html, internal_date })
     }
 
-    fn get_message_snippet(&self, access_token: &str, message_id: &str) -> Result<GmailMessageSnippet, String> {
-        let url = format!(
-            "https://gmail.googleapis.com/gmail/v1/users/me/messages/{}?format=metadata&metadataHeaders=Subject&metadataHeaders=Date",
-            message_id
-        );
-        let response = self.http
-            .get(&url)
-            .bearer_auth(access_token)
-            .send()
-            .map_err(|e| format!("Request failed: {}", e))?;
+    /// Batch-fetch HTML content for multiple messages using Gmail's batch endpoint.
+    /// Processes message IDs in chunks of 100 (Gmail batch limit).
+    /// Returns a map of message_id -> html_content, plus a list of errors.
+    pub fn batch_get_messages_html(
+        &self,
+        message_ids: &[String],
+    ) -> (HashMap<String, MessageContent>, Vec<String>) {
+        let mut results: HashMap<String, MessageContent> = HashMap::new();
+        let mut errors: Vec<String> = Vec::new();
 
-        if !response.status().is_success() {
-            return Err(format!("API error: {}", response.status()));
-        }
+        // Gmail batch API allows up to 100 requests per batch
+        const BATCH_SIZE: usize = 100;
 
-        let msg: serde_json::Value = response.json().map_err(|e| format!("Parse: {}", e))?;
-        let headers = msg.get("payload").and_then(|p| p.get("headers")).and_then(|h| h.as_array());
-        let (mut subject, mut date) = (String::new(), String::new());
-        if let Some(headers) = headers {
-            for h in headers {
-                let name = h.get("name").and_then(|n| n.as_str()).unwrap_or("");
-                let value = h.get("value").and_then(|v| v.as_str()).unwrap_or("");
-                if name == "Subject" { subject = value.to_string(); }
-                else if name == "Date" { date = value.to_string(); }
+        for chunk in message_ids.chunks(BATCH_SIZE) {
+            match self.batch_get_chunk(chunk) {
+                Ok(chunk_results) => {
+                    for (id, content_result) in chunk_results {
+                        match content_result {
+                            Ok(content) => { results.insert(id, content); }
+                            Err(e) => { errors.push(e); }
+                        }
+                    }
+                }
+                Err(e) => {
+                    errors.push(format!("Batch request failed: {}", e));
+                }
+            }
+
+            // Small delay between batches to respect rate limits
+            if chunk.len() == BATCH_SIZE {
+                std::thread::sleep(std::time::Duration::from_millis(100));
             }
         }
-        Ok(GmailMessageSnippet { id: message_id.to_string(), subject, date })
+
+        (results, errors)
+    }
+
+    fn batch_get_chunk(
+        &self,
+        message_ids: &[String],
+    ) -> Result<Vec<(String, Result<MessageContent, String>)>, String> {
+        let access_token = self.get_access_token()?;
+
+        // Build multipart/mixed batch request
+        let boundary = "batch_boundary_gmail_sync";
+        let mut body_parts = String::new();
+
+        for msg_id in message_ids {
+            body_parts.push_str(&format!(
+                "--{}\r\nContent-Type: application/http\r\n\r\nGET /gmail/v1/users/me/messages/{}?format=full\r\n\r\n",
+                boundary, msg_id
+            ));
+        }
+        body_parts.push_str(&format!("--{}--\r\n", boundary));
+
+        let url = "https://gmail.googleapis.com/batch/gmail/v1";
+        let response = self.http
+            .post(url)
+            .header("Content-Type", format!("multipart/mixed; boundary={}", boundary))
+            .bearer_auth(&access_token)
+            .body(body_parts)
+            .send()
+            .map_err(|e| format!("Batch request failed: {}", e))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().unwrap_or_default();
+            return Err(format!("Batch API error {}: {}", status, body));
+        }
+
+        let response_body = response.text().map_err(|e| format!("Read batch response: {}", e))?;
+        parse_batch_response(message_ids, &response_body)
     }
 
     fn save_tokens(&self, tokens: &GmailTokens) -> Result<(), String> {
@@ -404,4 +498,160 @@ fn urlencoding_encode(s: &str) -> String {
         }
     }
     r
+}
+
+struct TimeSegment {
+    start: String,
+    end: String,
+}
+
+fn generate_time_segments(start_date: &str, end_date: &str) -> Vec<TimeSegment> {
+    let parse_date = |d: &str| -> Option<chrono::NaiveDate> {
+        let d = d.replace('/', "-");
+        chrono::NaiveDate::parse_from_str(&d, "%Y-%m-%d").ok()
+    };
+
+    let mut start = parse_date(start_date).unwrap_or_else(|| chrono::NaiveDate::from_ymd_opt(2015, 1, 1).unwrap());
+    let end = parse_date(end_date).unwrap_or_else(|| chrono::Utc::now().naive_utc().date());
+
+    let mut segments = Vec::new();
+
+    while start < end {
+        let seg_end_month = if start.month() <= 6 {
+            start.month() + 6
+        } else {
+            start.month() - 6
+        };
+        let seg_end_year = if start.month() <= 6 {
+            start.year()
+        } else {
+            start.year() + 1
+        };
+
+        let seg_end = chrono::NaiveDate::from_ymd_opt(seg_end_year, seg_end_month, 1)
+            .unwrap_or(end)
+            .min(end);
+
+        segments.push(TimeSegment {
+            start: format!("{}/{:02}/{:02}", start.year(), start.month(), start.day()),
+            end: format!("{}/{:02}/{:02}", seg_end.year(), seg_end.month(), seg_end.day()),
+        });
+
+        let next_start = chrono::NaiveDate::from_ymd_opt(seg_end_year, seg_end_month, 1)
+            .unwrap_or(end);
+        if next_start <= start {
+            break;
+        }
+        start = next_start;
+        if start >= end {
+            break;
+        }
+    }
+
+    segments
+}
+
+fn parse_batch_response(
+    message_ids: &[String],
+    body: &str,
+) -> Result<Vec<(String, Result<MessageContent, String>)>, String> {
+    let mut results = Vec::new();
+    let mut remaining_ids: Vec<String> = message_ids.to_vec();
+
+    let mut depth = 0;
+    let mut json_starts: Vec<usize> = Vec::new();
+
+    for (i, ch) in body.char_indices() {
+        match ch {
+            '{' => {
+                if depth == 0 {
+                    json_starts.push(i);
+                }
+                depth += 1;
+            }
+            '}' => {
+                depth -= 1;
+                if depth == 0 && !json_starts.is_empty() {
+                    let start = json_starts.pop().unwrap();
+                    let json_str = &body[start..=i];
+                    if json_str.len() < 50 {
+                        continue;
+                    }
+                    if let Ok(msg) = serde_json::from_str::<serde_json::Value>(json_str) {
+                        let msg_id = msg.get("id")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+                        if msg.get("payload").is_some() {
+                            let html_result = extract_html_from_message(&msg);
+                            let internal_date = msg.get("internalDate")
+                                .and_then(|v| v.as_i64())
+                                .and_then(|ms| chrono::DateTime::from_timestamp_millis(ms))
+                                .map(|dt| dt.format("%Y-%m-%d").to_string());
+                            if let Some(id) = msg_id {
+                                let content = html_result.map(|html| MessageContent { html, internal_date }).map_err(|e| e.to_string());
+                                results.push((id.clone(), content));
+                                remaining_ids.retain(|rid| rid != &id);
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    for id in remaining_ids {
+        results.push((id, Err("No data found for message in batch response".to_string())));
+    }
+
+    Ok(results)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_time_segments_cover_full_range() {
+        let segments = generate_time_segments("2015/01/01", "2026/06/14");
+        assert!(!segments.is_empty(), "Should generate segments");
+
+        let first_start = &segments[0].start;
+        assert!(first_start.starts_with("2015"), "First segment should start from 2015");
+
+        let last = segments.last().unwrap();
+        assert!(last.end.contains("2026"), "Last segment should reach 2026");
+    }
+
+    #[test]
+    fn test_time_segments_since_date() {
+        let segments = generate_time_segments("2025/01/01", "2026/06/14");
+        assert!(segments.len() <= 4, "Short range should have few segments");
+
+        let first = &segments[0];
+        assert!(first.start.contains("2025"), "Should start from since_date");
+    }
+
+    #[test]
+    fn test_urlencoding_encode() {
+        assert_eq!(urlencoding_encode("hello world"), "hello%20world");
+        assert_eq!(urlencoding_encode("a@b.com"), "a%40b.com");
+        assert_eq!(urlencoding_encode("abc123-_."), "abc123-_.");
+    }
+
+    #[test]
+    fn test_extract_html_simple() {
+        use base64::Engine;
+        let msg = serde_json::json!({
+            "payload": {
+                "mimeType": "text/html",
+                "body": {
+                    "data": base64::engine::general_purpose::URL_SAFE_NO_PAD.encode("<html><body>Hello</body></html>".as_bytes())
+                }
+            }
+        });
+        let result = extract_html_from_message(&msg);
+        assert!(result.is_ok());
+        assert!(result.unwrap().contains("Hello"));
+    }
 }

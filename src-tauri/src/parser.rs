@@ -28,6 +28,8 @@ pub struct ParsedTransaction {
 pub fn parse_email_html(html: &str, profile: &ParserProfile) -> ParseResult {
     let document = Html::parse_document(html);
     let full_text = document.root_element().text().collect::<String>();
+    // `&nbsp;` decoded to U+00A0 (non-breaking space), which Rust regex `\s` does not match
+    let full_text = full_text.replace('\u{00A0}', " ");
 
     // 1. Extract date: try profile regex first, fallback to old method
     let email_date = extract_date_with_profile(&full_text, profile)
@@ -67,9 +69,9 @@ fn default_cmb_profile() -> ParserProfile {
         subject_pattern: "每日信用管家".to_string(),
         date_regex: r"\d{4}/\d{2}/\d{2}".to_string(),
         time_regex: r"\d{2}:\d{2}:\d{2}".to_string(),
-        amount_regex: r"(?:CNY|RMB)\s*([\d,]+\.?\d*)".to_string(),
+        amount_regex: r"(?:CNY|RMB)\s*(-?[\d,]+\.?\d*)".to_string(),
         card_last_four_regex: r"尾号(\d+)".to_string(),
-        merchant_regex: r"尾号\d+\s*(?:消费|支出|还款)\s*(.+)".to_string(),
+        merchant_regex: r"尾号\d+\s*(?:消费|支出|还款|退货)\s*(.+)".to_string(),
         created_at: String::new(),
     }
 }
@@ -121,7 +123,15 @@ fn extract_transactions(text: &str, profile: &ParserProfile) -> Vec<ParsedTransa
         let merchant_raw = merchant_re
             .captures(after)
             .and_then(|cap| cap.get(1))
-            .map(|m| m.as_str().trim().to_string());
+            .map(|m| {
+                let full = m.as_str();
+                // Greedy (.+) overmatches; cut before next time pattern
+                if let Some(next_time) = time_re.find(full) {
+                    full[..next_time.start()].trim().to_string()
+                } else {
+                    full.trim().to_string()
+                }
+            });
 
         if let (Some(amt), Some(merchant_text)) = (amount, merchant_raw) {
             let payment_method = extract_payment_method(&merchant_text);

@@ -30,3 +30,6 @@ env_logger = "0.11"
 base64 = "0.22"
 tiny_http = "0.12"
 
+[patch.crates-io]
+tao = { path = "tao-patched" }
+

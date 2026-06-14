@@ -1,5 +1,5 @@
 use crate::db::{Database, Card, CardDetail, CategoryRule, EnrichedDailySummary, Transaction, MonthlySummary, CategoryBreakdown, CreditTrend, DailySummary, PaginatedResult, SyncState, ParserProfile, DashboardData, YearlyTotal, PaymentMethodBreakdown};
-use crate::gmail::{GmailConfig, GmailSyncResult};
+use crate::gmail::{GmailConfig, GmailSyncResult, MessageContent};
 use crate::parser::{parse_email_html, ParseResult};
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
@@ -15,9 +15,9 @@ fn default_cmb_profile() -> ParserProfile {
         subject_pattern: "每日信用管家".to_string(),
         date_regex: r"\d{4}/\d{2}/\d{2}".to_string(),
         time_regex: r"\d{2}:\d{2}:\d{2}".to_string(),
-        amount_regex: r"(?:CNY|RMB)\s*([\d,]+\.?\d*)".to_string(),
+        amount_regex: r"(?:CNY|RMB)\s*(-?[\d,]+\.?\d*)".to_string(),
         card_last_four_regex: r"尾号(\d+)".to_string(),
-        merchant_regex: r"尾号\d+\s*(?:消费|支出|还款)\s*(.+)".to_string(),
+        merchant_regex: r"尾号\d+\s*(?:消费|支出|还款|退货)\s*(.+)".to_string(),
         created_at: String::new(),
     }
 }
@@ -328,7 +328,7 @@ fn sync_emails(
     gmail: &GmailState,
     card_id: i64,
     since_date: Option<&str>,
-    skip_existing: bool,
+    _skip_existing: bool,
 ) -> Result<GmailSyncResult, String> {
     let client = gmail.lock().map_err(|e| e.to_string())?;
 
@@ -336,17 +336,19 @@ fn sync_emails(
         success: true,
         new_summaries: 0,
         new_transactions: 0,
+        total_found: 0,
+        total_skipped: 0,
         errors: Vec::new(),
     };
 
-    let messages = match client.list_cmb_messages(since_date) {
-        Ok(msgs) => msgs,
+    let message_ids = match client.list_cmb_messages(since_date) {
+        Ok(ids) => ids,
         Err(e) => {
             return Err(format!("Failed to list Gmail messages: {}", e));
         }
     };
 
-    if messages.is_empty() {
+    if message_ids.is_empty() {
         let msg = if since_date.is_some() {
             "没有新的招商银行邮件需要同步。"
         } else {
@@ -355,50 +357,69 @@ fn sync_emails(
         return Err(msg.to_string());
     }
 
-    // Look up card's parser_profile once for all messages
+    result.total_found = message_ids.len() as i64;
+
     let profile = db.get_card(card_id)
         .map_err(|e| e.to_string())?
         .and_then(|card| db.get_parser_profile_by_name(&card.parser_profile).ok().flatten())
         .unwrap_or_else(default_cmb_profile);
 
-    for msg in &messages {
-        let html = match client.get_message_html(&msg.id) {
-            Ok(h) => h,
-            Err(e) => {
-                result.errors.push(format!("Failed to get message {}: {}", msg.id, e));
-                continue;
-            }
-        };
+    let new_msg_ids: Vec<String> = message_ids.iter()
+        .filter(|id| !db.email_uid_exists(id).unwrap_or(false))
+        .cloned()
+        .collect();
 
-        let parsed = parse_email_html(&html, &profile);
+    result.total_skipped = (message_ids.len() - new_msg_ids.len()) as i64;
 
-        let email_date = match parsed.email_date {
-            Some(d) => d,
-            None => {
-                result.errors.push(format!("Failed to parse date from message {}", msg.id));
-                continue;
-            }
-        };
-
-        if skip_existing
-            && db.get_daily_summaries(None, 1, 1000)
-                .map(|r| r.items.iter().any(|s| s.email_uid == msg.id))
-                .unwrap_or(false)
-        {
-            continue;
+    if new_msg_ids.is_empty() {
+        log::info!("All messages already synced, nothing to do");
+        if let Err(e) = db.update_sync_state() {
+            result.errors.push(format!("Failed to update sync state: {}", e));
         }
+        return Ok(result);
+    }
+
+    log::info!("Batch fetching {} new messages (skipped {} already synced)", new_msg_ids.len(), result.total_skipped);
+
+    let (content_map, batch_errors) = client.batch_get_messages_html(&new_msg_ids);
+    for err in &batch_errors {
+        log::warn!("Batch error: {}", err);
+        result.errors.push(err.clone());
+    }
+
+    for msg_id in &new_msg_ids {
+        let content_owned: Option<MessageContent> = match content_map.get(msg_id) {
+            Some(c) => Some(c.clone()),
+            None => client.get_message(msg_id).ok(),
+        };
+        let content = match content_owned {
+            Some(ref c) => c,
+            None => {
+                result.errors.push(format!("Failed to get message {}", msg_id));
+                continue;
+            }
+        };
+
+        let parsed = parse_email_html(&content.html, &profile);
+
+        let email_date = parsed.email_date
+            .or_else(|| content.internal_date.clone())
+            .unwrap_or_else(|| {
+                result.errors.push(format!("No date for message {}, using unknown", msg_id));
+                "unknown".to_string()
+            });
 
         let summary_id = match db.upsert_daily_summary(
             card_id,
             &email_date,
             parsed.available_credit,
             parsed.points_balance,
-            &msg.id,
-            Some(&html),
+            msg_id,
+            Some(&content.html),
         ) {
             Ok(id) => id,
             Err(e) => {
-                result.errors.push(format!("DB error for {}: {}", msg.id, e));
+                result.errors.push(format!("DB error for {}: {}", msg_id, e));
                 continue;
             }
         };
@@ -422,6 +443,15 @@ fn sync_emails(
             }
         }
     }
+
+    log::info!(
+        "Sync complete: found={}, skipped={}, new_summaries={}, new_transactions={}, errors={}",
+        result.total_found,
+        result.total_skipped,
+        result.new_summaries,
+        result.new_transactions,
+        result.errors.len()
+    );
 
     if let Err(e) = db.update_sync_state() {
         result.errors.push(format!("Failed to update sync state: {}", e));
