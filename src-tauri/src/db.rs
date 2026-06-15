@@ -117,6 +117,7 @@ pub struct DashboardData {
     pub max_single: f64,
     pub max_single_merchant: String,
     pub heatmap_data: std::collections::HashMap<String, HeatmapCell>,
+    pub available_years: Vec<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1064,6 +1065,21 @@ impl Database {
             heatmap_data.insert(date, cell);
         }
 
+        // Distinct years across all transactions (not filtered by `year`), so the
+        // heatmap year selector can offer every year that has data.
+        let years_sql = format!(
+            "SELECT DISTINCT CAST(strftime('%Y', transaction_date) AS INTEGER) as year
+             FROM transactions
+             WHERE 1=1 {}
+             ORDER BY year DESC",
+            card_clause
+        );
+        let mut years_stmt = conn.prepare(&years_sql)?;
+        let available_years: Vec<i32> = years_stmt
+            .query_map([], |row| row.get(0))?
+            .filter_map(|r| r.ok())
+            .collect();
+
         Ok(DashboardData {
             monthly_total,
             monthly_change_pct,
@@ -1073,6 +1089,7 @@ impl Database {
             max_single,
             max_single_merchant,
             heatmap_data,
+            available_years,
         })
     }
 

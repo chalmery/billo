@@ -138,6 +138,7 @@ export interface DashboardData {
   max_single: number
   max_single_merchant: string
   heatmap_data: Record<string, HeatmapCell>
+  available_years: number[]
 }
 
 export interface HeatmapCell {

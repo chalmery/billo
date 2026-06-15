@@ -31,10 +31,9 @@ export default function Dashboard() {
 
   const heatmapThresholds = [10, 30, 50, 200];
   const heatmapColors = ['#ebedf0', '#9be9a8', '#40c463', '#30a14e', '#216e39'];
-  const availableYears = data ? Object.keys(data.heatmap_data)
-    .map(k => parseInt(k.slice(0, 4)))
-    .filter((y, i, a) => a.indexOf(y) === i && y <= new Date().getFullYear())
-    .sort((a, b) => b - a) : [year];
+  const availableYears = data && data.available_years.length > 0
+    ? [...data.available_years].sort((a, b) => b - a)
+    : [year];
 
   useEffect(() => {
     if (availableYears.length > 0 && !availableYears.includes(year)) {
