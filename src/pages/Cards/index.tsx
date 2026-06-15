@@ -15,6 +15,7 @@ import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import CreditCardIcon from "@mui/icons-material/CreditCard";
 import { getCards, createCard, deleteCard } from "@/lib/api";
+import { bankAbbr } from "@/lib/bank";
 import type { Card as CardType } from "@/types";
 
 const CARD_GRADIENTS = [
@@ -116,7 +117,7 @@ export default function Cards() {
                     userSelect: "none",
                   }}
                 >
-                  {card.bank.slice(0, 2)}
+                  {bankAbbr(card.bank)}
                 </Typography>
                 <IconButton
                   onClick={(e) => { e.stopPropagation(); handleDelete(card.id); }}
@@ -144,7 +145,7 @@ export default function Cards() {
                 </Box>
                 <Box sx={{ mt: 2 }}>
                   <Typography sx={{ color: "#fff", fontSize: "1.875rem", fontFamily: "monospace", letterSpacing: "0.1em" }}>
-                    **** {card.last_four}
+                    {card.last_four}
                   </Typography>
                 </Box>
                 <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", mt: 2 }}>

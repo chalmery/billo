@@ -25,6 +25,7 @@ import {
   getSyncState, getParserProfiles,
 } from "@/lib/api";
 import type { CardDetail as CardDetailType, ParserProfile } from "@/lib/api";
+import { bankAbbr } from "@/lib/bank";
 
 type StatusMsg = { type: "success" | "error"; text: string };
 
@@ -218,11 +219,11 @@ export default function CardDetail() {
       {/* Card Preview Card */}
       <Box sx={{ borderRadius: 2, p: 3, minHeight: 180, display: "flex", flexDirection: "column", justifyContent: "space-between", boxShadow: 3, overflow: "hidden", position: "relative" }} style={{ background: gradient }}>
         <Typography sx={{ position: "absolute", top: 12, right: 12, color: "rgba(255,255,255,0.15)", fontSize: "3rem", fontWeight: 900 }}>
-          {card.bank.slice(0, 2)}
+          {bankAbbr(card.bank)}
         </Typography>
         <Box>
           <Typography sx={{ color: "rgba(255,255,255,0.7)", fontSize: "0.875rem", fontWeight: 500 }}>{card.name}</Typography>
-          <Typography sx={{ color: "#fff", fontSize: "2.25rem", fontFamily: "monospace", letterSpacing: "0.1em", mt: 2 }}>**** {card.last_four}</Typography>
+          <Typography sx={{ color: "#fff", fontSize: "2.25rem", fontFamily: "monospace", letterSpacing: "0.1em", mt: 2 }}>{card.last_four}</Typography>
         </Box>
         <Typography sx={{ color: "rgba(255,255,255,0.5)", fontSize: "0.75rem" }}>{card.bank}</Typography>
       </Box>
