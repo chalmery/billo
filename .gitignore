@@ -47,3 +47,6 @@ Thumbs.db
 
 .superpowers/
 .claude/.worktrees/
+
+# Claude 临时 session 文件
+.omo/
