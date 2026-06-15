@@ -29,8 +29,13 @@ export default function Dashboard() {
     ...cards.map(c => ({ key: String(c.id), label: c.name, sublabel: c.last_four })),
   ];
 
-  const heatmapThresholds = [10, 30, 50, 200];
+  const [heatmapThresholds, setHeatmapThresholds] = useState([10, 30, 50, 200]);
   const heatmapColors = ['#ebedf0', '#9be9a8', '#40c463', '#30a14e', '#216e39'];
+
+  useEffect(() => {
+    const saved = localStorage.getItem("billo-heatmap-thresholds");
+    if (saved) try { setHeatmapThresholds(JSON.parse(saved)); } catch {}
+  }, []);
   const availableYears = data && data.available_years.length > 0
     ? [...data.available_years].sort((a, b) => b - a)
     : [year];

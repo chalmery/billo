@@ -229,17 +229,23 @@ pub fn is_configured(&self) -> bool {
             "每日信用管家"
         );
 
-        // Determine date range for segmentation
-let start_date = since_date
-            .map(|d| d.replace('-', "/"))
-            .unwrap_or_else(|| "2015/01/01".to_string());
+        // Determine date range for segmentation.
+        // For incremental sync, extend start_date backwards by 7 days so we
+        // catch any emails that were missed near the boundary (Gmail after: is
+        // exclusive, and a previous sync may have skipped some messages).
+        let start_date = if let Some(d) = since_date {
+            let d = d.replace('-', "/");
+            gmail_date_subtract_days(&d, 7)
+        } else {
+            "2015/01/01".to_string()
+        };
 
         // Use local time +1 day so `before:` includes today's emails
         // (Gmail's before:date is exclusive; to include today we need tomorrow)
         let tomorrow = chrono::Local::now().date_naive() + chrono::TimeDelta::days(1);
         let end_date = format!(
             "{}/{:02}/{:02}",
-            tomorrow.year() + (tomorrow.month() == 12 && tomorrow.day() == 31) as i32,
+            tomorrow.year(),
             tomorrow.month() as u32,
             tomorrow.day() as u32
         );
@@ -251,9 +257,13 @@ let start_date = since_date
         let mut seen_ids: HashSet<String> = HashSet::new();
 
         for segment in &segments {
+            // Gmail's after: is exclusive, so shift back 1 day to include the
+            // segment start date itself. This also prevents boundary dates from
+            // falling between adjacent segments.
+            let after_date = gmail_date_subtract_days(&segment.start, 1);
             let query = format!(
                 "{} after:{} before:{}",
-                base_query, segment.start, segment.end
+                base_query, after_date, segment.end
             );
             info!("Gmail list segment query: {}", query);
 
@@ -337,10 +347,7 @@ let start_date = since_date
 
         let full_msg: serde_json::Value = response.json().map_err(|e| format!("Parse error: {}", e))?;
 
-        let internal_date = full_msg.get("internalDate")
-            .and_then(|v| v.as_i64())
-            .and_then(|ms| chrono::DateTime::from_timestamp_millis(ms))
-            .map(|dt| dt.format("%Y-%m-%d").to_string());
+        let internal_date = parse_internal_date(&full_msg);
 
         let html = extract_html_from_message(&full_msg)?;
         Ok(MessageContent { html, internal_date })
@@ -437,6 +444,16 @@ let start_date = since_date
     }
 }
 
+/// Parse Gmail's `internalDate` (epoch milliseconds) into a YYYY-MM-DD string.
+/// Gmail returns it as a JSON string (e.g. "1781529000000"), so `as_i64()`
+/// alone always yields None — accept both string and numeric forms.
+fn parse_internal_date(msg: &serde_json::Value) -> Option<String> {
+    msg.get("internalDate")
+        .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse::<i64>().ok())))
+        .and_then(chrono::DateTime::from_timestamp_millis)
+        .map(|dt| dt.format("%Y-%m-%d").to_string())
+}
+
 fn extract_html_from_message(msg: &serde_json::Value) -> Result<String, String> {
     let payload = msg.get("payload").ok_or("No payload")?;
     if let Some(html) = find_html_in_payload(payload) {
@@ -484,9 +501,16 @@ fn find_html_in_payload(payload: &serde_json::Value) -> Option<String> {
 
 fn base64_decode_urlsafe(data: &str) -> Result<Vec<u8>, String> {
     use base64::Engine;
-    base64::engine::general_purpose::URL_SAFE_NO_PAD
-        .decode(data)
-        .map_err(|e| format!("Base64 error: {}", e))
+    use base64::engine::{GeneralPurpose, GeneralPurposeConfig, DecodePaddingMode};
+    // Gmail returns message body `data` as base64url, sometimes WITH `=`
+    // padding and sometimes without. URL_SAFE_NO_PAD rejects padded input,
+    // which silently dropped every email whose body length required padding.
+    // Use an engine that is indifferent to padding so both forms decode.
+    const ENGINE: GeneralPurpose = GeneralPurpose::new(
+        &base64::alphabet::URL_SAFE,
+        GeneralPurposeConfig::new().with_decode_padding_mode(DecodePaddingMode::Indifferent),
+    );
+    ENGINE.decode(data).map_err(|e| format!("Base64 error: {}", e))
 }
 
 fn urlencoding_encode(s: &str) -> String {
@@ -498,6 +522,18 @@ fn urlencoding_encode(s: &str) -> String {
         }
     }
     r
+}
+
+/// Subtract `days` from a Gmail-format date string (YYYY/MM/DD).
+/// Returns the result in the same format. Never goes before 2000/01/01.
+fn gmail_date_subtract_days(date_str: &str, days: i64) -> String {
+    let d = date_str.replace('/', "-");
+    let parsed = chrono::NaiveDate::parse_from_str(&d, "%Y-%m-%d")
+        .unwrap_or_else(|_| chrono::NaiveDate::from_ymd_opt(2020, 1, 1).unwrap());
+    let adjusted = parsed - chrono::TimeDelta::days(days);
+    let floor = chrono::NaiveDate::from_ymd_opt(2000, 1, 1).unwrap();
+    let safe = if adjusted < floor { floor } else { adjusted };
+    format!("{}/{:02}/{:02}", safe.year(), safe.month(), safe.day())
 }
 
 struct TimeSegment {
@@ -583,10 +619,7 @@ fn parse_batch_response(
                             .map(|s| s.to_string());
                         if msg.get("payload").is_some() {
                             let html_result = extract_html_from_message(&msg);
-                            let internal_date = msg.get("internalDate")
-                                .and_then(|v| v.as_i64())
-                                .and_then(|ms| chrono::DateTime::from_timestamp_millis(ms))
-                                .map(|dt| dt.format("%Y-%m-%d").to_string());
+                            let internal_date = parse_internal_date(&msg);
                             if let Some(id) = msg_id {
                                 let content = html_result.map(|html| MessageContent { html, internal_date }).map_err(|e| e.to_string());
                                 results.push((id.clone(), content));
@@ -630,6 +663,117 @@ mod tests {
 
         let first = &segments[0];
         assert!(first.start.contains("2025"), "Should start from since_date");
+    }
+
+    #[test]
+    fn test_gmail_date_subtract_days() {
+        assert_eq!(gmail_date_subtract_days("2026/06/09", 1), "2026/06/08");
+        assert_eq!(gmail_date_subtract_days("2026/06/09", 7), "2026/06/02");
+        assert_eq!(gmail_date_subtract_days("2026/01/01", 1), "2025/12/31");
+        assert_eq!(gmail_date_subtract_days("2026/03/01", 1), "2026/02/28");
+        // Leap year 2024
+        assert_eq!(gmail_date_subtract_days("2024/03/01", 1), "2024/02/29");
+        // Floor at 2000/01/01
+        let early = gmail_date_subtract_days("2000/01/01", 365);
+        assert!(early.starts_with("2000/01/01") || early.as_str() >= "2000/01/01");
+    }
+
+    #[test]
+    fn test_segments_no_boundary_gaps() {
+        // After applying the -1 day fix to after:, segment boundary dates
+        // should be covered by adjacent segments.
+        let segments = generate_time_segments("2024/06/15", "2026/06/16");
+        assert!(!segments.is_empty());
+
+        let first_start = chrono::NaiveDate::parse_from_str(
+            &segments[0].start.replace('/', "-"), "%Y-%m-%d"
+        ).unwrap();
+        let last_end = chrono::NaiveDate::parse_from_str(
+            &segments.last().unwrap().end.replace('/', "-"), "%Y-%m-%d"
+        ).unwrap();
+
+        let mut covered = std::collections::HashSet::new();
+        for seg in &segments {
+            let after_date = gmail_date_subtract_days(&seg.start, 1);
+            let seg_start = chrono::NaiveDate::parse_from_str(
+                &after_date.replace('/', "-"), "%Y-%m-%d"
+            ).unwrap();
+            let seg_end = chrono::NaiveDate::parse_from_str(
+                &seg.end.replace('/', "-"), "%Y-%m-%d"
+            ).unwrap();
+            let mut d = seg_start + chrono::TimeDelta::days(1);
+            while d < seg_end {
+                covered.insert(d);
+                d += chrono::TimeDelta::days(1);
+            }
+        }
+
+        let mut gaps = Vec::new();
+        let mut d = first_start + chrono::TimeDelta::days(1);
+        while d < last_end {
+            if !covered.contains(&d) {
+                gaps.push(d);
+            }
+            d += chrono::TimeDelta::days(1);
+        }
+
+        assert!(gaps.is_empty(), "Found {} uncovered boundary dates: {:?}", gaps.len(), gaps);
+    }
+
+    #[test]
+    fn test_incremental_sync_covers_boundary_date() {
+        // Simulate incremental sync with since_date="2026-06-09"
+        let since = Some("2026-06-09");
+        let start_date = if let Some(d) = since {
+            let d = d.replace('-', "/");
+            gmail_date_subtract_days(&d, 7)
+        } else {
+            "2015/01/01".to_string()
+        };
+        // end_date = "2026/06/16" (tomorrow)
+        let segments = generate_time_segments(&start_date, "2026/06/16");
+
+        // Check June 5-9 coverage (the user's scenario)
+        for day in 5..=9 {
+            let date = chrono::NaiveDate::from_ymd_opt(2026, 6, day).unwrap();
+            let covered = segments.iter().any(|seg| {
+                let after_date = gmail_date_subtract_days(&seg.start, 1);
+                let seg_start = chrono::NaiveDate::parse_from_str(
+                    &after_date.replace('/', "-"), "%Y-%m-%d"
+                ).unwrap();
+                let seg_end = chrono::NaiveDate::parse_from_str(
+                    &seg.end.replace('/', "-"), "%Y-%m-%d"
+                ).unwrap();
+                let cs = seg_start + chrono::TimeDelta::days(1);
+                let ce = seg_end - chrono::TimeDelta::days(1);
+                date >= cs && date <= ce
+            });
+            assert!(covered, "Date {} should be covered by incremental sync", date);
+        }
+    }
+
+    #[test]
+    fn test_base64_decode_handles_padding() {
+        use base64::Engine;
+        // Padded base64url (length needs `=`) must decode — this is what was
+        // silently failing before, dropping ~2/3 of CMB daily emails.
+        let padded = base64::engine::general_purpose::URL_SAFE.encode(b"<html>x</html>");
+        assert!(padded.ends_with('='), "test input should be padded");
+        let decoded = base64_decode_urlsafe(&padded).expect("padded must decode");
+        assert_eq!(decoded, b"<html>x</html>");
+        // Unpadded form must still work too.
+        let unpadded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b"hello");
+        assert_eq!(base64_decode_urlsafe(&unpadded).unwrap(), b"hello");
+    }
+
+    #[test]
+    fn test_parse_internal_date_string_form() {
+        // Gmail sends internalDate as a JSON string of epoch millis.
+        let msg = serde_json::json!({ "internalDate": "1781529000000" });
+        assert_eq!(parse_internal_date(&msg).as_deref(), Some("2026-06-15"));
+        // Numeric form should also work.
+        let msg2 = serde_json::json!({ "internalDate": 1781529000000i64 });
+        assert_eq!(parse_internal_date(&msg2).as_deref(), Some("2026-06-15"));
     }
 
     #[test]

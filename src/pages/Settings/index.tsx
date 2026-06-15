@@ -17,7 +17,7 @@ export default function Settings() {
 
   // Heatmap thresholds
   const [thresholds, setThresholds] = useState([10, 30, 50, 200]);
-  const heatmapSaved = () => localStorage.setItem("billo-heatmap-thresholds", JSON.stringify(thresholds));
+  const heatmapSaved = (next: number[]) => localStorage.setItem("billo-heatmap-thresholds", JSON.stringify(next));
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -68,7 +68,7 @@ export default function Settings() {
             <Box key={i}>
               <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>档位 {i + 1}</Typography>
               <TextField type="number" size="small" fullWidth value={t}
-                onChange={(e) => { const next = [...thresholds]; next[i] = Number(e.target.value) || 0; setThresholds(next); heatmapSaved(); }} />
+                onChange={(e) => { const next = [...thresholds]; next[i] = Number(e.target.value) || 0; setThresholds(next); heatmapSaved(next); }} />
             </Box>
           ))}
         </Box>
